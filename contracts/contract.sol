@@ -70,34 +70,35 @@ contract MicropaymentsChannel {
         _
     }
 
-    modifier withYoungerBalance(uint _balanceTimestamp) {
+    function assertYoungerBalance(uint _balanceTimestamp) internal {
         if (balanceTimestamp < _balanceTimestamp) {
             throw;
         }
-        _
     }
 
-    modifier withSaneBalance(uint _fromBalance, uint _toBalance) {
+    function assertSaneBalance(uint _fromBalance, uint _toBalance) internal {
         if (fromBalance + toBalance < _fromBalance + _toBalance) {
             throw;
         }
-        _
     }
 
-    modifier withMessageHash(bytes32 _expected, bytes32 _sigHash) {
+    function assertMessageHash(bytes32 _expected, bytes32 _sigHash) internal {
         if (_expected != _sigHash) {
             throw;
         }
-        _
     }
 
-    modifier signedByBoth(bytes32 _sigHash, uint8 _sigV, bytes32 _sigR, bytes32 _sigS) {
+    function assertSignedByBoth(
+        bytes32 _sigHash,
+        uint8 _sigV,
+        bytes32 _sigR,
+        bytes32 _sigS
+    ) internal {
         address receiver = ecrecover(_sigHash, _sigV, _sigR, _sigS);
         if (!(((from == msg.sender) && (to == receiver)) || 
               ((from == receiver) && (to == msg.sender)))) {
             throw;
         }
-        _
     }
 
     function openChannel()
@@ -105,7 +106,7 @@ contract MicropaymentsChannel {
         atStage(Stage.Empty) 
     {
         stage = Stage.PartiallyConfirmed;
-        channels[_from][_to].fromBalance = msg.value;
+        fromBalance = msg.value;
     }
     
     function confirmChannel() 
@@ -148,11 +149,11 @@ contract MicropaymentsChannel {
     )
         onlyParticipants
         atOneOfStages(Stage.Confirmed, Stage.Closing)
-        withYoungerBalance(_balanceTimestamp)
-        withSaneBalance(_fromBalance, _toBalance)
-        withMessageHash(sha3(id, _balanceTimestamp, _fromBalance, _toBalance), _sigHash)
-        signedByBoth(_sigHash, _sigV, _sigR, _sigS))
-    {   
+    {
+        assertYoungerBalance(_balanceTimestamp);
+        assertSaneBalance(_fromBalance, _toBalance);
+        assertMessageHash(sha3(id, _balanceTimestamp, _fromBalance, _toBalance), _sigHash);
+        assertSignedByBoth(_sigHash, _sigV, _sigR, _sigS);
         balanceTimestamp = _balanceTimestamp;
         fromBalance = _fromBalance;
         toBalance = _toBalance;
