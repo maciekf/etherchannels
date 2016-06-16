@@ -1,91 +1,160 @@
 contract MicropaymentsChannel {
-    enum ChannelStage {
+    enum Stage {
         Empty,
         PartiallyConfirmed,
         Confirmed,
         Closing
     }
 
-    struct Channel {
-        ChannelStage stage;
-        uint closingBlockNumber;
-        uint id;
-        uint balanceAge;
-        uint fromBalance;
-        uint toBalance;
+    uint constant closingBlockDelay = 10;
+
+    Stage stage;
+    uint id;
+    address from;
+    uint fromBalance;
+    address to;
+    uint toBalance;
+    uint balanceTimestamp;
+
+    uint closingBlockNumber;
+
+    function MicropaymentsChannel(address _from, address _to, uint _id) {
+        stage = Stage.Empty;
+        id  = _id;
+        from = _from;
+        fromBalance = 0;
+        _to = to;
+        toBalance = 0;
+        balanceTimestamp = 0;
     }
 
-    uint idGen;
-    uint closingBlockDelay;
-    mapping(address => mapping(address => Channel)) channels;
-
-    function MicropaymentsChannel() {
-        idGen = 1;
-        closingBlockDelay = 10;
+    modifier onlyFrom {
+        if (msg.sender != from) {
+            throw;
+        }
+        _
     }
 
-    function openChannel(address _to) {
-        address _from = msg.sender;
-        if (channels[_from][_to].stage != ChannelStage.Empty) throw;
-        channels[_from][_to].stage = ChannelStage.PartiallyConfirmed;
-        channels[_from][_to].id = idGen++;
+   modifier onlyTo {
+        if (msg.sender != to) {
+            throw;
+        }
+        _
+    }
+
+    modifier onlyParticipants {
+        if ((msg.sender != from) || (msg.sender != to)) {
+            throw;
+        }
+        _
+    }
+
+    modifier atStage(Stage _stage) {
+        if (stage != _stage) {
+            throw;
+        }
+        _
+    }
+
+    modifier atOneOfStages(Stage _stage1, Stage _stage2) {
+        if ((stage != _stage1) && (stage != _stage2)) {
+            throw;
+        }
+        _
+    }
+
+    modifier readyToClose() {
+        if (block.number < closingBlockNumber) {
+            throw;
+        }
+        _
+    }
+
+    modifier withYoungerBalance(uint _balanceTimestamp) {
+        if (balanceTimestamp < _balanceTimestamp) {
+            throw;
+        }
+        _
+    }
+
+    modifier withSaneBalance(uint _fromBalance, uint _toBalance) {
+        if (fromBalance + toBalance < _fromBalance + _toBalance) {
+            throw;
+        }
+        _
+    }
+
+    modifier withMessageHash(bytes32 _expected, bytes32 _sigHash) {
+        if (_expected != _sigHash) {
+            throw;
+        }
+        _
+    }
+
+    modifier signedByBoth(bytes32 _sigHash, uint8 _sigV, bytes32 _sigR, bytes32 _sigS) {
+        address receiver = ecrecover(_sigHash, _sigV, _sigR, _sigS);
+        if (!(((from == msg.sender) && (to == receiver)) || 
+              ((from == receiver) && (to == msg.sender)))) {
+            throw;
+        }
+        _
+    }
+
+    function openChannel()
+        onlyFrom
+        atStage(Stage.Empty) 
+    {
+        stage = Stage.PartiallyConfirmed;
         channels[_from][_to].fromBalance = msg.value;
     }
     
-    function confirmChannel(address _from) {
-        address _to = msg.sender;
-        if (channels[_from][_to].stage != ChannelStage.PartiallyConfirmed) throw;
-        channels[_from][_to].stage = ChannelStage.Confirmed;
-        channels[_from][_to].toBalance = msg.value;
+    function confirmChannel() 
+        onlyTo
+        atStage(Stage.PartiallyConfirmed)
+    {
+        stage = Stage.Confirmed;
+        toBalance = msg.value;
     }
     
-    function requestClosingChannel(address _from, address _to) {
-        if ((msg.sender != _from) && (msg.sender != _to)) throw;
-        if (channels[_from][_to].stage != ChannelStage.PartiallyConfirmed) {
-            _from.send(channels[_from][_to].fromBalance);
-            delete channels[_from][_to];
-        } else if (channels[_from][_to].stage != ChannelStage.Confirmed) {
-            channels[_from][_to].stage = ChannelStage.Closing;
-            channels[_from][_to].closingBlockNumber = block.number + closingBlockDelay;
+    function requestClosingChannel()
+        onlyParticipants
+        atOneOfStages(Stage.PartiallyConfirmed, Stage.Confirmed)
+    {
+        if (stage == Stage.PartiallyConfirmed) {
+            suicide(from);
         } else {
-            throw;
+            stage = Stage.Closing;
+            closingBlockNumber = block.number + closingBlockDelay;
         }
     }
     
-    function closeChannel(address _from, address _to) {
-        if ((msg.sender != _from) && (msg.sender != _to)) throw;
-        if ((channels[_from][_to].stage != ChannelStage.Closing) || 
-            (block.number < channels[_from][_to].closingBlockNumber)) throw;
-        _from.send(channels[_from][_to].fromBalance);
-        _to.send(channels[_from][_to].toBalance);
-        delete channels[_from][_to];
+    function closeChannel() 
+        onlyParticipants
+        atStage(Stage.Closing)
+        readyToClose
+    {
+        from.send(fromBalance);
+        suicide(to);
     }
     
     function updateChannelState(
-        address _from,
-        address _to,
-        uint _balanceAge,
+        uint _balanceTimestamp,
         uint _fromBalance,
         uint _toBalance,
         bytes32 _sigHash,
         uint8 _sigV,
         bytes32 _sigR,
         bytes32 _sigS
-        ) {
-        if ((msg.sender != _from) && (msg.sender != _to)) throw;
-        if ((channels[_from][_to].stage != ChannelStage.Confirmed) || 
-            (channels[_from][_to].stage != ChannelStage.Closing)) throw;
-        if (_balanceAge < channels[_from][_to].balanceAge) throw;
-        bytes32 updateHash = sha3(channels[_from][_to].id,
-                                  _balanceAge,
-                                  _fromBalance,
-                                  _toBalance);
-        if (_sigHash != updateHash) throw;
-        address receiver = ecrecover(_sigHash, _sigV, _sigR, _sigS);
-        if (!(((_from == msg.sender) && (_to == receiver)) || ((_from == receiver) && (_to == msg.sender)))) throw;
-        
-        channels[_from][_to].balanceAge = _balanceAge;
-        channels[_from][_to].fromBalance = _fromBalance;
-        channels[_from][_to].toBalance = _toBalance;
+    )
+        onlyParticipants
+        atOneOfStages(Stage.Confirmed, Stage.Closing)
+        withYoungerBalance(_balanceTimestamp)
+        withSaneBalance(_fromBalance, _toBalance)
+        withMessageHash(sha3(id, _balanceTimestamp, _fromBalance, _toBalance), _sigHash)
+        signedByBoth(_sigHash, _sigV, _sigR, _sigS))
+    {   
+        balanceTimestamp = _balanceTimestamp;
+        fromBalance = _fromBalance;
+        toBalance = _toBalance;
     }
 }
