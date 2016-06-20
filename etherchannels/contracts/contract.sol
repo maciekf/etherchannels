@@ -6,24 +6,24 @@ contract MicropaymentsChannel {
         Closing
     }
 
-    uint constant closingBlockDelay = 10;
+    uint public constant closingBlockDelay = 10;
 
-    Stage stage;
-    uint id;
-    address from;
-    uint fromBalance;
-    address to;
-    uint toBalance;
-    uint balanceTimestamp;
+    Stage public stage;
+    uint public id;
+    address public from;
+    uint public fromBalance;
+    address public to;
+    uint public toBalance;
+    uint public balanceTimestamp;
 
-    uint closingBlockNumber;
+    uint public closingBlockNumber;
 
     function MicropaymentsChannel(address _from, address _to, uint _id) {
         stage = Stage.Empty;
         id  = _id;
         from = _from;
         fromBalance = 0;
-        _to = to;
+        to = _to;
         toBalance = 0;
         balanceTimestamp = 0;
     }
