@@ -3,7 +3,8 @@ contract MicropaymentsChannel {
         Empty,
         PartiallyConfirmed,
         Confirmed,
-        Closing
+        Closing,
+        Closed
     }
 
     uint public constant closingBlockDelay = 10;
@@ -101,6 +102,23 @@ contract MicropaymentsChannel {
         }
     }
 
+    function getUpdateHash(
+        uint _balanceTimestamp,
+        uint _fromBalance,
+        uint _toBalance
+    ) constant returns(bytes32) {
+        return sha3(id, _balanceTimestamp, _fromBalance, _toBalance);
+    }
+
+    function getSigner(
+        bytes32 _sigHash,
+        uint8 _sigV,
+        bytes32 _sigR,
+        bytes32 _sigS
+    ) constant returns(address) {
+        return ecrecover(_sigHash, _sigV, _sigR, _sigS);
+    }
+
     function openChannel()
         onlyFrom
         atStage(Stage.Empty) 
@@ -134,25 +152,9 @@ contract MicropaymentsChannel {
         atStage(Stage.Closing)
         readyToClose
     {
+        stage = Stage.Closed;
         from.send(fromBalance);
         suicide(to);
-    }
-    
-    function getUpdateHash(
-        uint _balanceTimestamp,
-        uint _fromBalance,
-        uint _toBalance
-    ) constant returns(bytes32) {
-        return sha3(id, _balanceTimestamp, _fromBalance, _toBalance);
-    }
-
-    function getSigner(
-        bytes32 _sigHash,
-        uint8 _sigV,
-        bytes32 _sigR,
-        bytes32 _sigS
-    ) constant returns(address) {
-        return ecrecover(_sigHash, _sigV, _sigR, _sigS);
     }
 
     function updateChannelState(
