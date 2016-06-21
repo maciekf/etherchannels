@@ -88,6 +88,14 @@ contract MicropaymentsChannel {
         }
     }
 
+    function getUpdateMessageHash(
+        uint _balanceTimestamp,
+        uint _fromBalance,
+        uint _toBalance
+    ) internal returns(bytes32) {
+        return sha3(id, _balanceTimestamp, _fromBalance, _toBalance);
+    }
+
     function assertSignedByBoth(
         bytes32 _sigHash,
         uint8 _sigV,
@@ -152,7 +160,7 @@ contract MicropaymentsChannel {
     {
         assertYoungerBalance(_balanceTimestamp);
         assertSaneBalance(_fromBalance, _toBalance);
-        assertMessageHash(sha3(id, _balanceTimestamp, _fromBalance, _toBalance), _sigHash);
+        assertMessageHash(getUpdateMessageHash(_balanceTimestamp, _fromBalance, _toBalance), _sigHash);
         assertSignedByBoth(_sigHash, _sigV, _sigR, _sigS);
         balanceTimestamp = _balanceTimestamp;
         fromBalance = _fromBalance;
