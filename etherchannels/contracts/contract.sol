@@ -176,3 +176,21 @@ contract MicropaymentsChannel {
         toBalance = _toBalance;
     }
 }
+
+contract MicropaymentsNetwork {
+    mapping (address => mapping (address => mapping( uint => MicropaymentsChannel))) channels;
+    
+    function MicropaymentsNetwork() {
+    }
+    
+    function registerChannel(address _from, address _to, uint _id) {
+        channels[_from][_to][_id] = new MicropaymentsChannel(_from, _to, _id);
+    }
+    
+    function getChannel(address _from, address _to, uint _id)
+        constant
+        returns (MicropaymentsChannel) 
+    {
+        return channels[_from][_to][_id];
+    }
+}
