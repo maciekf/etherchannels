@@ -95,9 +95,9 @@ contract MicropaymentsChannel {
         bytes32 _sigR,
         bytes32 _sigS
     ) internal {
-        address receiver = ecrecover(_sigHash, _sigV, _sigR, _sigS);
-        if (!(((from == msg.sender) && (to == receiver)) || 
-              ((from == receiver) && (to == msg.sender)))) {
+        address signer = getSigner(_sigHash, _sigV, _sigR, _sigS);
+        if (!(((from == msg.sender) && (to == signer)) || 
+              ((from == signer) && (to == msg.sender)))) {
             throw;
         }
     }
