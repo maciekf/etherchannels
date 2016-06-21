@@ -43,7 +43,7 @@ contract MicropaymentsChannel {
     }
 
     modifier onlyParticipants {
-        if ((msg.sender != from) || (msg.sender != to)) {
+        if ((msg.sender != from) && (msg.sender != to)) {
             throw;
         }
         _
