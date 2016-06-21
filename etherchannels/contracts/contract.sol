@@ -161,7 +161,6 @@ contract MicropaymentsChannel {
         uint _balanceTimestamp,
         uint _fromBalance,
         uint _toBalance,
-        bytes32 _sigHash,
         uint8 _sigV,
         bytes32 _sigR,
         bytes32 _sigS
@@ -171,8 +170,7 @@ contract MicropaymentsChannel {
     {
         assertYoungerBalance(_balanceTimestamp);
         assertSaneBalance(_fromBalance, _toBalance);
-        assertMessageHash(getUpdateHash(_balanceTimestamp, _fromBalance, _toBalance), _sigHash);
-        assertSignedByBoth(_sigHash, _sigV, _sigR, _sigS);
+        assertSignedByBoth(getUpdateHash(_balanceTimestamp, _fromBalance, _toBalance), _sigV, _sigR, _sigS);
         balanceTimestamp = _balanceTimestamp;
         fromBalance = _fromBalance;
         toBalance = _toBalance;
