@@ -71,7 +71,7 @@ contract MicropaymentsChannel {
     }
 
     function assertYoungerBalance(uint _balanceTimestamp) internal {
-        if (balanceTimestamp < _balanceTimestamp) {
+        if (_balanceTimestamp <= balanceTimestamp) {
             throw;
         }
     }
@@ -86,14 +86,6 @@ contract MicropaymentsChannel {
         if (_expected != _sigHash) {
             throw;
         }
-    }
-
-    function getUpdateMessageHash(
-        uint _balanceTimestamp,
-        uint _fromBalance,
-        uint _toBalance
-    ) internal returns(bytes32) {
-        return sha3(id, _balanceTimestamp, _fromBalance, _toBalance);
     }
 
     function assertSignedByBoth(
@@ -146,6 +138,23 @@ contract MicropaymentsChannel {
         suicide(to);
     }
     
+    function getUpdateHash(
+        uint _balanceTimestamp,
+        uint _fromBalance,
+        uint _toBalance
+    ) constant returns(bytes32) {
+        return sha3(id, _balanceTimestamp, _fromBalance, _toBalance);
+    }
+
+    function getSigner(
+        bytes32 _sigHash,
+        uint8 _sigV,
+        bytes32 _sigR,
+        bytes32 _sigS
+    ) constant returns(address) {
+        return ecrecover(_sigHash, _sigV, _sigR, _sigS);
+    }
+
     function updateChannelState(
         uint _balanceTimestamp,
         uint _fromBalance,
@@ -160,7 +169,7 @@ contract MicropaymentsChannel {
     {
         assertYoungerBalance(_balanceTimestamp);
         assertSaneBalance(_fromBalance, _toBalance);
-        assertMessageHash(getUpdateMessageHash(_balanceTimestamp, _fromBalance, _toBalance), _sigHash);
+        assertMessageHash(getUpdateHash(_balanceTimestamp, _fromBalance, _toBalance), _sigHash);
         assertSignedByBoth(_sigHash, _sigV, _sigR, _sigS);
         balanceTimestamp = _balanceTimestamp;
         fromBalance = _fromBalance;
