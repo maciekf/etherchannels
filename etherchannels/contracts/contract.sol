@@ -20,6 +20,9 @@ contract MicropaymentsChannel {
     uint public closingBlockNumber;
 
     function MicropaymentsChannel(address _from, address _to, uint _id) {
+        if (_id == 0) {
+            throw;
+        }
         stage = Stage.Empty;
         id  = _id;
         from = _from;
@@ -64,7 +67,7 @@ contract MicropaymentsChannel {
         _
     }
 
-    modifier readyToClose() {
+    modifier readyToClose {
         if (block.number < closingBlockNumber) {
             throw;
         }
@@ -198,8 +201,15 @@ contract MicropaymentsNetwork {
     
     function MicropaymentsNetwork() {
     }
+
+    function assertSlotIsAvailable(address _from, address _to, uint _id) {
+        if (channels[_from][_to][_id] != 0) {
+            throw;
+        } 
+    }
     
     function registerChannel(address _from, address _to, uint _id) {
+        assertSlotIsAvailable(_from, _to, _id);
         channels[_from][_to][_id] = new MicropaymentsChannel(_from, _to, _id);
     }
     
