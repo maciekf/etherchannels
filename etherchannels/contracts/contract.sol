@@ -140,7 +140,7 @@ contract MicropaymentsChannel {
         atOneOfStages(Stage.PartiallyConfirmed, Stage.Confirmed)
     {
         if (stage == Stage.PartiallyConfirmed) {
-            suicide(from);
+            stage = Stage.Closed;
         } else {
             stage = Stage.Closing;
             closingBlockNumber = block.number + closingBlockDelay;
@@ -153,8 +153,24 @@ contract MicropaymentsChannel {
         readyToClose
     {
         stage = Stage.Closed;
-        from.send(fromBalance);
-        suicide(to);
+    }
+
+    function withdrawFrom()
+        onlyFrom
+        atStage(Stage.Closed)
+    {
+        uint balance = fromBalance;
+        fromBalance = 0;
+        from.send(balance);
+    }
+
+    function withdrawTo()
+        onlyTo
+        atStage(Stage.Closed)
+    {
+        uint toSend = toBalance;
+        toBalance = 0;
+        to.send(balance);
     }
 
     function updateChannelState(
