@@ -1,3 +1,4 @@
 from django.contrib import admin
+from node.models import MicropaymentsChannel
 
-# Register your models here.
+admin.site.register(MicropaymentsChannel)

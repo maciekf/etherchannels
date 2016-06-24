@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'node',
 ]
 
 MIDDLEWARE_CLASSES = [
@@ -119,3 +120,11 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/1.9/howto/static-files/
 
 STATIC_URL = '/static/'
+
+# Ethereum client properties
+
+WALLET_ADDRESS = '0x0'
+
+ETHEREUM_HOSTNAME = 'localhost'
+
+ETHEREUM_PORT = '8545'
