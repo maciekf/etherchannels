@@ -171,7 +171,7 @@ contract MicropaymentsChannel {
         onlyTo
         atStage(Stage.Closed)
     {
-        uint toSend = toBalance;
+        uint balance = toBalance;
         toBalance = 0;
         to.send(balance);
     }
@@ -203,7 +203,7 @@ contract MicropaymentsNetwork {
     }
 
     function assertSlotIsAvailable(address _from, address _to, uint _id) {
-        if (channels[_from][_to][_id] != 0) {
+        if (channels[_from][_to][_id].id() != 0) {
             throw;
         } 
     }

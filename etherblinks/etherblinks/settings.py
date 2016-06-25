@@ -31,13 +31,14 @@ ALLOWED_HOSTS = []
 # Application definition
 
 INSTALLED_APPS = [
+    'rest_framework',
+    'node',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'node',
 ]
 
 MIDDLEWARE_CLASSES = [
@@ -121,10 +122,27 @@ USE_TZ = True
 
 STATIC_URL = '/static/'
 
-# Ethereum client properties
+# REST API
 
-WALLET_ADDRESS = '0x0'
+REST_FRAMEWORK = {
+    'DEFAULT_PARSER_CLASSES': (
+        'rest_framework.parsers.JSONParser',
+    ),
+    'DEFAULT_RENDERER_CLASSES': (
+        'rest_framework.renderers.JSONRenderer',
+        'rest_framework.renderers.BrowsableAPIRenderer',
+    ),
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework.authentication.BasicAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
+    )
+}
+
+
+# Ethereum client properties
 
 ETHEREUM_HOSTNAME = 'localhost'
 
-ETHEREUM_PORT = '8545'
+ETHEREUM_PORT = 8545
+
+MICROPAYMENTS_NETWORK_ADDRESS = '0x54352c6682ab9a61a4b773aee7a292d631a817ba'

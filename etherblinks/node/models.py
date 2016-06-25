@@ -1,9 +1,12 @@
 from __future__ import unicode_literals
 
+from django.contrib.auth.models import User
 from django.db import models
 
 
 class MicropaymentsChannel(models.Model):
+    owner = models.ForeignKey(User)
+
     channel_id = models.CharField(max_length=70)
     channel_address = models.CharField(max_length=70)
 

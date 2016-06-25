@@ -1,5 +1,5 @@
-from ethjsonrpc import EthJsonRpc
-from django.http import HttpResponse
+from rest_framework.views import APIView
 
-def index(request):
-    return HttpResponse("Hello, world")
+
+class NewChannel(APIView):
+    pass
