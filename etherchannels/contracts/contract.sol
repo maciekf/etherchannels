@@ -197,26 +197,35 @@ contract MicropaymentsChannel {
 }
 
 contract MicropaymentsNetwork {
-    mapping (address => mapping (address => mapping( uint => MicropaymentsChannel))) channels;
+    mapping(uint => MicropaymentsChannel) channels;
+    mapping(uint => bool) reserved;
     
     function MicropaymentsNetwork() {
     }
 
-    function assertSlotIsAvailable(address _from, address _to, uint _id) {
-        if (channels[_from][_to][_id].id() != 0) {
+    function assertAvailable(uint _id) internal {
+        if (!isAvailable(_id)) {
             throw;
-        } 
+        }
+    }
+
+    function isAvailable(uint _id)
+        constant
+        returns (bool)
+    {
+        return !reserved[_id];
     }
     
     function registerChannel(address _from, address _to, uint _id) {
-        assertSlotIsAvailable(_from, _to, _id);
-        channels[_from][_to][_id] = new MicropaymentsChannel(_from, _to, _id);
+        assertAvailable(_id);
+        reserved[_id] = true;
+        channels[_id] = new MicropaymentsChannel(_from, _to, _id);
     }
     
-    function getChannel(address _from, address _to, uint _id)
+    function getChannel(uint _id)
         constant
         returns (MicropaymentsChannel) 
     {
-        return channels[_from][_to][_id];
+        return channels[_id];
     }
 }
