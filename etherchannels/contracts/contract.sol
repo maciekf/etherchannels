@@ -97,10 +97,43 @@ contract MicropaymentsNetwork {
         }
     }
 
+    function assertMatchingBalance(uint _cid, uint _balanceTimestamp)
+        internal
+    {
+        if (_balanceTimestamp != channels[_cid].balanceTimestamp) {
+            throw;
+        }
+    }
+
     function assertSaneBalance(uint _cid, uint _fromBalance, uint _toBalance)
         internal
     {
         if (channels[_cid].fromBalance + channels[_cid].toBalance < _fromBalance + _toBalance) {
+            throw;
+        }
+    }
+
+    function assertStillValid(uint _timeout)
+        internal
+    {
+        if (_timeout < now) {
+            throw;
+        }
+    }
+
+    function assertSaneHTLC(uint _cid, int _fromToDelta)
+        internal
+    {
+        if ((int(channels[_cid].fromBalance) - _fromToDelta < 0) ||
+            (int(channels[_cid].toBalance) + _fromToDelta < 0)) {
+            throw;
+        }
+    }
+
+    function assertHash(bytes32 _data, bytes32 _hash)
+        internal
+    {
+        if (getHash(_data) != _hash) {
             throw;
         }
     }
@@ -120,6 +153,13 @@ contract MicropaymentsNetwork {
         }
     }
 
+    function getHash(bytes32 _data)
+        constant
+        returns (bytes32)
+    {
+        return sha3(_data);
+    }
+
     function getUpdateHash(
         uint _cid,
         uint _balanceTimestamp,
@@ -129,6 +169,18 @@ contract MicropaymentsNetwork {
         returns(bytes32)
     {
         return sha3(_cid, _balanceTimestamp, _fromBalance, _toBalance);
+    }
+
+    function getHTLCHash(
+        uint _cid,
+        uint _balanceTimestamp,
+        uint _timeout,
+        bytes32 _hash,
+        int _fromToDelta)
+        constant
+        returns(bytes32)
+    {
+        return sha3(_cid, _timeout, _hash, _fromToDelta);
     }
 
     function getSigner(
@@ -270,5 +322,28 @@ contract MicropaymentsNetwork {
         channels[_cid].balanceTimestamp = _balanceTimestamp;
         channels[_cid].fromBalance = _fromBalance;
         channels[_cid].toBalance = _toBalance;
+    }
+
+    function resolveHTLC(
+        uint _cid,
+        uint _balanceTimestamp,
+        uint _timeout,
+        bytes32 _hash,
+        int _fromToDelta,
+        bytes32 _data,
+        uint8 _sigV,
+        bytes32 _sigR,
+        bytes32 _sigS)
+    {
+        assertOnlyParticipants(_cid);
+        assertAtOneOfStages(_cid, ChannelStage.Confirmed, ChannelStage.Closing);
+        assertMatchingBalance(_cid, _balanceTimestamp);
+        assertStillValid(_timeout);
+        assertSaneHTLC(_cid, _fromToDelta);
+        assertHash(_data, _hash);
+        assertSignedByBoth(_cid, getHTLCHash(_cid, _balanceTimestamp, _timeout, _hash, _fromToDelta), _sigV, _sigR, _sigS);
+
+        channels[_cid].fromBalance = uint(int(channels[_cid].fromBalance) - _fromToDelta);
+        channels[_cid].toBalance = uint(int(channels[_cid].toBalance) + _fromToDelta);
     }
 }
