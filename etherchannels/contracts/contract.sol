@@ -1,5 +1,6 @@
-contract MicropaymentsChannel {
-    enum Stage {
+contract MicropaymentsNetwork {
+
+    enum ChannelStage {
         Empty,
         PartiallyConfirmed,
         Confirmed,
@@ -7,225 +8,267 @@ contract MicropaymentsChannel {
         Closed
     }
 
-    uint public constant closingBlockDelay = 10;
+    struct MicropaymentsChannel {
+        ChannelStage stage;
 
-    Stage public stage;
-    uint public id;
-    address public from;
-    uint public fromBalance;
-    address public to;
-    uint public toBalance;
-    uint public balanceTimestamp;
+        address from;
+        uint fromBalance;
 
-    uint public closingBlockNumber;
+        address to;
+        uint toBalance;
 
-    function MicropaymentsChannel(address _from, address _to, uint _id) {
-        if (_id == 0) {
-            throw;
-        }
-        stage = Stage.Empty;
-        id  = _id;
-        from = _from;
-        fromBalance = 0;
-        to = _to;
-        toBalance = 0;
-        balanceTimestamp = 0;
+        uint balanceTimestamp;
+        uint closingBlockNumber;
     }
 
-    modifier onlyFrom {
-        if (msg.sender != from) {
-            throw;
-        }
-        _
+    uint public constant closingDelay = 10;
+
+    mapping(uint => MicropaymentsChannel) channels;
+    mapping(uint => bool) reserved;
+    
+    function MicropaymentsNetwork()
+    {
     }
 
-   modifier onlyTo {
-        if (msg.sender != to) {
-            throw;
-        }
-        _
+    function isAvailable(uint _cid)
+        constant
+        returns (bool)
+    {
+        return !reserved[_cid];
     }
 
-    modifier onlyParticipants {
-        if ((msg.sender != from) && (msg.sender != to)) {
-            throw;
-        }
-        _
-    }
-
-    modifier atStage(Stage _stage) {
-        if (stage != _stage) {
-            throw;
-        }
-        _
-    }
-
-    modifier atOneOfStages(Stage _stage1, Stage _stage2) {
-        if ((stage != _stage1) && (stage != _stage2)) {
-            throw;
-        }
-        _
-    }
-
-    modifier readyToClose {
-        if (block.number < closingBlockNumber) {
-            throw;
-        }
-        _
-    }
-
-    function assertYoungerBalance(uint _balanceTimestamp) internal {
-        if (_balanceTimestamp <= balanceTimestamp) {
+    function assertAvailable(uint _cid)
+        internal
+    {
+        if (!isAvailable(_cid)) {
             throw;
         }
     }
 
-    function assertSaneBalance(uint _fromBalance, uint _toBalance) internal {
-        if (fromBalance + toBalance < _fromBalance + _toBalance) {
+    function assertOnlyFrom(uint _cid)
+        internal
+    {
+        if (msg.sender != channels[_cid].from) {
             throw;
         }
     }
 
-    function assertMessageHash(bytes32 _expected, bytes32 _sigHash) internal {
-        if (_expected != _sigHash) {
+    function assertOnlyTo(uint _cid)
+        internal
+    {
+        if (msg.sender != channels[_cid].to) {
+            throw;
+        }
+    }
+
+    function assertOnlyParticipants(uint _cid)
+        internal
+    {
+        if ((msg.sender != channels[_cid].from) && (msg.sender != channels[_cid].to)) {
+            throw;
+        }
+    }
+
+    function assertAtStage(uint _cid, ChannelStage _stage)
+        internal
+    {
+        if (channels[_cid].stage != _stage) {
+            throw;
+        }
+    }
+
+    function assertAtOneOfStages(uint _cid, ChannelStage _stage1, ChannelStage _stage2) {
+        if ((channels[_cid].stage != _stage1) && (channels[_cid].stage != _stage2)) {
+            throw;
+        }
+    }
+
+    function assertReadyToClose(uint _cid) {
+        if (block.number < channels[_cid].closingBlockNumber) {
+            throw;
+        }
+    }
+
+    function assertYoungerBalance(uint _cid, uint _balanceTimestamp)
+        internal
+    {
+        if (_balanceTimestamp <= channels[_cid].balanceTimestamp) {
+            throw;
+        }
+    }
+
+    function assertSaneBalance(uint _cid, uint _fromBalance, uint _toBalance)
+        internal
+    {
+        if (channels[_cid].fromBalance + channels[_cid].toBalance < _fromBalance + _toBalance) {
             throw;
         }
     }
 
     function assertSignedByBoth(
+        uint _cid,
         bytes32 _sigHash,
         uint8 _sigV,
         bytes32 _sigR,
-        bytes32 _sigS
-    ) internal {
+        bytes32 _sigS)
+        internal
+    {
         address signer = getSigner(_sigHash, _sigV, _sigR, _sigS);
-        if (!(((from == msg.sender) && (to == signer)) || 
-              ((from == signer) && (to == msg.sender)))) {
+        if (!(((channels[_cid].from == msg.sender) && (channels[_cid].to == signer)) || 
+              ((channels[_cid].from == signer) && (channels[_cid].to == msg.sender)))) {
             throw;
         }
     }
 
     function getUpdateHash(
+        uint _cid,
         uint _balanceTimestamp,
         uint _fromBalance,
-        uint _toBalance
-    ) constant returns(bytes32) {
-        return sha3(id, _balanceTimestamp, _fromBalance, _toBalance);
+        uint _toBalance)
+        constant
+        returns(bytes32)
+    {
+        return sha3(_cid, _balanceTimestamp, _fromBalance, _toBalance);
     }
 
     function getSigner(
         bytes32 _sigHash,
         uint8 _sigV,
         bytes32 _sigR,
-        bytes32 _sigS
-    ) constant returns(address) {
+        bytes32 _sigS)
+        constant
+        returns(address)
+    {
         return ecrecover(_sigHash, _sigV, _sigR, _sigS);
     }
+    
+    function createChannel(address _from, address _to, uint _cid)
+    {
+        assertAvailable(_cid);
 
-    function openChannel()
-        onlyFrom
-        atStage(Stage.Empty) 
+        reserved[_cid] = true;
+        channels[_cid] = MicropaymentsChannel(ChannelStage.Empty, _from, 0, _to, 0, 0, 0);
+    }
+
+    function getFrom(uint _cid)
+        constant
+        returns (address)
     {
-        stage = Stage.PartiallyConfirmed;
-        fromBalance = msg.value;
+        return channels[_cid].from;
+    }
+
+    function getFromBalance(uint _cid)
+        constant
+        returns (uint)
+    {
+        return channels[_cid].fromBalance;
+    }
+
+    function getTo(uint _cid)
+        constant
+        returns (address)
+    {
+        return channels[_cid].to;
+    }
+
+    function getToBalance(uint _cid)
+        constant
+        returns (uint)
+    {
+        return channels[_cid].toBalance;
+    }
+
+    function getBalanceTimestamp(uint _cid)
+        constant
+        returns (uint)
+    {
+        return channels[_cid].balanceTimestamp;
+    }
+
+    function getClosingBlockNumber(uint _cid)
+        constant
+        returns (uint)
+    {
+        return channels[_cid].closingBlockNumber;
+    }
+
+    function openChannel(uint _cid)
+    {
+        assertOnlyFrom(_cid);
+        assertAtStage(_cid, ChannelStage.Empty);
+
+        channels[_cid].stage = ChannelStage.PartiallyConfirmed;
+        channels[_cid].fromBalance = msg.value;
     }
     
-    function confirmChannel() 
-        onlyTo
-        atStage(Stage.PartiallyConfirmed)
+    function confirmChannel(uint _cid)
     {
-        stage = Stage.Confirmed;
-        toBalance = msg.value;
+        assertOnlyTo(_cid);
+        assertAtStage(_cid, ChannelStage.PartiallyConfirmed);
+
+        channels[_cid].stage = ChannelStage.Confirmed;
+        channels[_cid].toBalance = msg.value;
     }
-    
-    function requestClosingChannel()
-        onlyParticipants
-        atOneOfStages(Stage.PartiallyConfirmed, Stage.Confirmed)
+
+    function requestClosingChannel(uint _cid)
     {
-        if (stage == Stage.PartiallyConfirmed) {
-            stage = Stage.Closed;
+        assertOnlyParticipants(_cid);
+        assertAtOneOfStages(_cid, ChannelStage.PartiallyConfirmed, ChannelStage.Confirmed);
+
+        if (channels[_cid].stage == ChannelStage.PartiallyConfirmed) {
+            channels[_cid].stage = ChannelStage.Closed;
         } else {
-            stage = Stage.Closing;
-            closingBlockNumber = block.number + closingBlockDelay;
+            channels[_cid].stage = ChannelStage.Closing;
+            channels[_cid].closingBlockNumber = block.number + closingDelay;
         }
     }
     
-    function closeChannel() 
-        onlyParticipants
-        atStage(Stage.Closing)
-        readyToClose
+    function closeChannel(uint _cid)
     {
-        stage = Stage.Closed;
+        assertOnlyParticipants(_cid);
+        assertAtStage(_cid, ChannelStage.Closing);
+        assertReadyToClose(_cid);
+
+        channels[_cid].stage = ChannelStage.Closed;
     }
 
-    function withdrawFrom()
-        onlyFrom
-        atStage(Stage.Closed)
+    function withdrawFrom(uint _cid)
     {
-        uint balance = fromBalance;
-        fromBalance = 0;
-        from.send(balance);
+        assertOnlyFrom(_cid);
+        assertAtStage(_cid, ChannelStage.Closed);
+
+        uint balance = channels[_cid].fromBalance;
+        channels[_cid].fromBalance = 0;
+        channels[_cid].from.send(balance);
     }
 
-    function withdrawTo()
-        onlyTo
-        atStage(Stage.Closed)
+    function withdrawTo(uint _cid)
     {
-        uint balance = toBalance;
-        toBalance = 0;
-        to.send(balance);
+        assertOnlyTo(_cid);
+        assertAtStage(_cid, ChannelStage.Closed);
+
+        uint balance = channels[_cid].toBalance;
+        channels[_cid].toBalance = 0;
+        channels[_cid].to.send(balance);
     }
 
     function updateChannelState(
+        uint _cid,
         uint _balanceTimestamp,
         uint _fromBalance,
         uint _toBalance,
         uint8 _sigV,
         bytes32 _sigR,
-        bytes32 _sigS
-    )
-        onlyParticipants
-        atOneOfStages(Stage.Confirmed, Stage.Closing)
+        bytes32 _sigS)
     {
-        assertYoungerBalance(_balanceTimestamp);
-        assertSaneBalance(_fromBalance, _toBalance);
-        assertSignedByBoth(getUpdateHash(_balanceTimestamp, _fromBalance, _toBalance), _sigV, _sigR, _sigS);
-        balanceTimestamp = _balanceTimestamp;
-        fromBalance = _fromBalance;
-        toBalance = _toBalance;
-    }
-}
+        assertOnlyParticipants(_cid);
+        assertAtOneOfStages(_cid, ChannelStage.Confirmed, ChannelStage.Closing);
+        assertYoungerBalance(_cid, _balanceTimestamp);
+        assertSaneBalance(_cid, _fromBalance, _toBalance);
+        assertSignedByBoth(_cid, getUpdateHash(_cid, _balanceTimestamp, _fromBalance, _toBalance), _sigV, _sigR, _sigS);
 
-contract MicropaymentsNetwork {
-    mapping(uint => MicropaymentsChannel) channels;
-    mapping(uint => bool) reserved;
-    
-    function MicropaymentsNetwork() {
-    }
-
-    function assertAvailable(uint _id) internal {
-        if (!isAvailable(_id)) {
-            throw;
-        }
-    }
-
-    function isAvailable(uint _id)
-        constant
-        returns (bool)
-    {
-        return !reserved[_id];
-    }
-    
-    function registerChannel(address _from, address _to, uint _id) {
-        assertAvailable(_id);
-        reserved[_id] = true;
-        channels[_id] = new MicropaymentsChannel(_from, _to, _id);
-    }
-    
-    function getChannel(uint _id)
-        constant
-        returns (MicropaymentsChannel) 
-    {
-        return channels[_id];
+        channels[_cid].balanceTimestamp = _balanceTimestamp;
+        channels[_cid].fromBalance = _fromBalance;
+        channels[_cid].toBalance = _toBalance;
     }
 }
