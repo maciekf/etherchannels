@@ -213,7 +213,7 @@ contract MicropaymentsNetwork
         return ecrecover(_sigHash, _sigV, _sigR, _sigS);
     }
     
-    function createChannel(address _from, address _to, uint _cid)
+    function createChannel(uint _cid, address _from, address _to)
     {
         assertAvailable(_cid);
 
