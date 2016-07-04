@@ -14,6 +14,14 @@ def _unpack_signature(signature):
     return sig_v, sig_r, sig_s
 
 
+def is_available(cid):
+    return ethereum_client.call(
+        settings.MICROPAYMENTS_NETWORK_ADDRESS,
+        'isAvailable(uint256)',
+        [cid],
+        ['bool'])[0]
+
+
 def create_channel(sender, cid, from_address, to_address):
     ethereum_client.call_with_transaction(
         sender,
