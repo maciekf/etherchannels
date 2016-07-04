@@ -1,6 +1,8 @@
-contract MicropaymentsNetwork {
+contract MicropaymentsNetwork
+{
 
-    enum ChannelStage {
+    enum ChannelStage
+    {
         Empty,
         PartiallyConfirmed,
         Confirmed,
@@ -8,7 +10,8 @@ contract MicropaymentsNetwork {
         Closed
     }
 
-    struct MicropaymentsChannel {
+    struct MicropaymentsChannel
+    {
         ChannelStage stage;
 
         address from;
@@ -40,7 +43,8 @@ contract MicropaymentsNetwork {
     function assertAvailable(uint _cid)
         internal
     {
-        if (!isAvailable(_cid)) {
+        if (!isAvailable(_cid))
+        {
             throw;
         }
     }
@@ -48,7 +52,8 @@ contract MicropaymentsNetwork {
     function assertOnlyFrom(uint _cid)
         internal
     {
-        if (msg.sender != channels[_cid].from) {
+        if (msg.sender != channels[_cid].from)
+        {
             throw;
         }
     }
@@ -56,7 +61,8 @@ contract MicropaymentsNetwork {
     function assertOnlyTo(uint _cid)
         internal
     {
-        if (msg.sender != channels[_cid].to) {
+        if (msg.sender != channels[_cid].to)
+        {
             throw;
         }
     }
@@ -64,7 +70,8 @@ contract MicropaymentsNetwork {
     function assertOnlyParticipants(uint _cid)
         internal
     {
-        if ((msg.sender != channels[_cid].from) && (msg.sender != channels[_cid].to)) {
+        if ((msg.sender != channels[_cid].from) && (msg.sender != channels[_cid].to))
+        {
             throw;
         }
     }
@@ -72,19 +79,24 @@ contract MicropaymentsNetwork {
     function assertAtStage(uint _cid, ChannelStage _stage)
         internal
     {
-        if (channels[_cid].stage != _stage) {
+        if (channels[_cid].stage != _stage)
+        {
             throw;
         }
     }
 
-    function assertAtOneOfStages(uint _cid, ChannelStage _stage1, ChannelStage _stage2) {
-        if ((channels[_cid].stage != _stage1) && (channels[_cid].stage != _stage2)) {
+    function assertAtOneOfStages(uint _cid, ChannelStage _stage1, ChannelStage _stage2)
+    {
+        if ((channels[_cid].stage != _stage1) && (channels[_cid].stage != _stage2))
+        {
             throw;
         }
     }
 
-    function assertReadyToClose(uint _cid) {
-        if (block.number < channels[_cid].closingBlockNumber) {
+    function assertReadyToClose(uint _cid)
+    {
+        if (block.number < channels[_cid].closingBlockNumber)
+        {
             throw;
         }
     }
@@ -92,7 +104,8 @@ contract MicropaymentsNetwork {
     function assertYoungerBalance(uint _cid, uint _balanceTimestamp)
         internal
     {
-        if (_balanceTimestamp <= channels[_cid].balanceTimestamp) {
+        if (_balanceTimestamp <= channels[_cid].balanceTimestamp)
+        {
             throw;
         }
     }
@@ -100,7 +113,8 @@ contract MicropaymentsNetwork {
     function assertMatchingBalance(uint _cid, uint _balanceTimestamp)
         internal
     {
-        if (_balanceTimestamp != channels[_cid].balanceTimestamp) {
+        if (_balanceTimestamp != channels[_cid].balanceTimestamp)
+        {
             throw;
         }
     }
@@ -108,7 +122,8 @@ contract MicropaymentsNetwork {
     function assertSaneBalance(uint _cid, uint _fromBalance, uint _toBalance)
         internal
     {
-        if (channels[_cid].fromBalance + channels[_cid].toBalance < _fromBalance + _toBalance) {
+        if (channels[_cid].fromBalance + channels[_cid].toBalance < _fromBalance + _toBalance)
+        {
             throw;
         }
     }
@@ -116,7 +131,8 @@ contract MicropaymentsNetwork {
     function assertStillValid(uint _timeout)
         internal
     {
-        if (_timeout < now) {
+        if (_timeout < now)
+        {
             throw;
         }
     }
@@ -125,7 +141,8 @@ contract MicropaymentsNetwork {
         internal
     {
         if ((int(channels[_cid].fromBalance) - _fromToDelta < 0) ||
-            (int(channels[_cid].toBalance) + _fromToDelta < 0)) {
+            (int(channels[_cid].toBalance) + _fromToDelta < 0))
+        {
             throw;
         }
     }
@@ -133,7 +150,8 @@ contract MicropaymentsNetwork {
     function assertHash(bytes32 _data, bytes32 _hash)
         internal
     {
-        if (getHash(_data) != _hash) {
+        if (getHash(_data) != _hash)
+        {
             throw;
         }
     }
@@ -148,7 +166,8 @@ contract MicropaymentsNetwork {
     {
         address signer = getSigner(_sigHash, _sigV, _sigR, _sigS);
         if (!(((channels[_cid].from == msg.sender) && (channels[_cid].to == signer)) || 
-              ((channels[_cid].from == signer) && (channels[_cid].to == msg.sender)))) {
+              ((channels[_cid].from == signer) && (channels[_cid].to == msg.sender))))
+        {
             throw;
         }
     }
@@ -267,9 +286,12 @@ contract MicropaymentsNetwork {
         assertOnlyParticipants(_cid);
         assertAtOneOfStages(_cid, ChannelStage.PartiallyConfirmed, ChannelStage.Confirmed);
 
-        if (channels[_cid].stage == ChannelStage.PartiallyConfirmed) {
+        if (channels[_cid].stage == ChannelStage.PartiallyConfirmed)
+        {
             channels[_cid].stage = ChannelStage.Closed;
-        } else {
+        }
+        else
+        {
             channels[_cid].stage = ChannelStage.Closing;
             channels[_cid].closingBlockNumber = block.number + closingDelay;
         }
