@@ -19,5 +19,6 @@ from django.contrib import admin
 urlpatterns = [
     url(r'^auth/', include('rest_framework.urls', namespace='rest_framework')),
     url(r'^node/', include('node.urls')),
+    url(r'^docs/', include('rest_framework_swagger.urls')),
     url(r'^admin/', admin.site.urls),
 ]

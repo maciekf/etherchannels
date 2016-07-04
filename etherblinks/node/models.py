@@ -5,16 +5,29 @@ from django.db import models
 
 
 class MicropaymentsChannel(models.Model):
+    channel_id = models.CharField(max_length=100, primary_key=True)
+
     owner = models.ForeignKey(User)
+    owner_address = models.CharField(max_length=100)
 
-    channel_id = models.CharField(max_length=70)
-    channel_address = models.CharField(max_length=70)
 
-    from_address = models.CharField(max_length=70)
-    from_balance = models.CharField(max_length=70)
+class ChannelState(models.Model):
+    channel = models.ForeignKey(MicropaymentsChannel)
 
-    to_address = models.CharField(max_length=70)
-    to_balance = models.CharField(max_length=70)
+    balance_timestamp = models.CharField(max_length=100)
+    from_balance = models.CharField(max_length=100)
+    to_balance = models.CharField(max_length=100)
 
-    balance_timestamp = models.CharField(max_length=70)
-    balance_signature = models.CharField(max_length=140)
+    second_signature = models.CharField(max_length=150)
+
+
+class HashedTimelockContract(models.Model):
+    channel = models.ForeignKey(MicropaymentsChannel)
+
+    balance_timestamp = models.CharField(max_length=100)
+    timeout = models.CharField(max_length=100)
+    contract_hash = models.CharField(max_length=100)
+    from_to_delta = models.CharField(max_length=100)
+    data = models.CharField(max_length=100)
+
+    second_signature = models.CharField(max_length=150)
