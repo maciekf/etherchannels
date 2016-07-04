@@ -3,6 +3,8 @@ import ethjsonrpc
 
 class EthJsonRpc(ethjsonrpc.EthJsonRpc):
 
+    DEFAULT_GAS_PER_TX = 300000
+
     def call_with_transaction(self, from_, address, sig, args, value=None, gas=None, gas_price=None):
         """
         Call a contract function by sending a transaction (useful for storing
