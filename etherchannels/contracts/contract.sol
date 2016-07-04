@@ -221,6 +221,13 @@ contract MicropaymentsNetwork
         channels[_cid] = MicropaymentsChannel(ChannelStage.Empty, _from, 0, _to, 0, 0, 0);
     }
 
+    function getStage(uint _cid)
+        constant
+        returns (uint8)
+    {
+        return uint8(channels[_cid].stage);
+    }
+
     function getFrom(uint _cid)
         constant
         returns (address)
