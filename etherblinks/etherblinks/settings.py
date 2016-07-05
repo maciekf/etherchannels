@@ -122,6 +122,8 @@ USE_TZ = True
 
 STATIC_URL = '/static/'
 
+LOGIN_REDIRECT_URL = '/node'
+
 # REST API
 
 REST_FRAMEWORK = {
