@@ -43,8 +43,16 @@ def create_channel(request):
                            cid,
                            from_address,
                            to_address)
-    deferred_save_channel(from_address, cid)
+    deferred_save_channel(cid, request.user)
     return Response()
+
+
+@api_view(['GET'])
+@authentication_classes((SessionAuthentication, BasicAuthentication))
+@permission_classes((IsAuthenticated,))
+def list_channels(request):
+    channel_ids = [user_channel.channel_id for user_channel in MicropaymentsChannel.objects.filter(owner=request.user)]
+    return Response(channel_ids)
 
 
 @api_view(['POST'])
@@ -60,23 +68,24 @@ def register_created_channel(request):
 @api_view(['POST'])
 @authentication_classes((SessionAuthentication, BasicAuthentication))
 @permission_classes((IsAuthenticated,))
-def open_channel(request):
-    cid = request.data["cid"]
+def open_channel(request, cid):
+    cid = int(cid)
+    from_address = request.user.useraddress.address
     balance = request.data["balance"]
-    if request.user.useraddress.address != channel.get_from(cid):
+    if from_address != channel.get_from(cid):
         raise ValidationError("User is not from recipient of the channel")
     if channel.get_stage(cid) != channel.ChannelStage.EMPTY:
         raise ValidationError("Channel is in invalid stage")
 
-    channel.open_channel(request.user.useraddress.address, cid, balance)
+    channel.open_channel(from_address, cid, balance)
     return Response()
 
 
 @api_view(['POST'])
 @authentication_classes((SessionAuthentication, BasicAuthentication))
 @permission_classes((IsAuthenticated,))
-def confirm_channel(request):
-    cid = request.data["cid"]
+def confirm_channel(request, cid):
+    cid = int(cid)
     balance = request.data["balance"]
     if request.user.useraddress.address != channel.get_to(cid):
         raise ValidationError("User is not from recipient of the channel")
@@ -88,9 +97,9 @@ def confirm_channel(request):
 
 
 @deferred_task
-def deferred_save_channel(useraddress, cid):
-    if channel.get_from(cid) != useraddress.address:
+def deferred_save_channel(cid, user):
+    if channel.get_from(cid) != user.useraddress.address:
         raise ValueError("Channel does not exist on the blockchain")
 
-    micropayments_channel = MicropaymentsChannel.create(cid, useraddress.user)
+    micropayments_channel = MicropaymentsChannel.create(cid, user)
     micropayments_channel.save()

@@ -1,11 +1,15 @@
 from __future__ import unicode_literals
 
+import logging
+
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from datetime import datetime, timedelta
 
 from django.apps import AppConfig
 
+
+logging.basicConfig()
 
 scheduler = BackgroundScheduler()
 scheduler.start()
