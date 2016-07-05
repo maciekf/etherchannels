@@ -7,6 +7,14 @@ from jsonrpc import EthJsonRpc
 ethereum_client = EthJsonRpc(settings.ETHEREUM_HOSTNAME, settings.ETHEREUM_PORT)
 
 
+class ChannelStage(object):
+    EMPTY = 0
+    PARTIALLY_CONFIRMED = 1
+    CONFIRMED = 2
+    CLOSING = 3
+    CLOSED = 4
+
+
 def _unpack_signature(signature):
     sig_v = int(signature[128:130]) + 27
     sig_r = binascii.unhexlify(signature[0:64])
