@@ -1,10 +1,13 @@
+import requests
+
 from apps import deferred_task
 
 from django.contrib.auth.models import User
+from django.conf import settings
 
 from ethereum import channel
 
-from models import MicropaymentsChannel, UserAddress
+from models import Location, MicropaymentsChannel, UserAddress
 
 from rest_framework.authentication import SessionAuthentication, BasicAuthentication
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
@@ -13,7 +16,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 
-@api_view(['PUT'])
+@api_view(['POST'])
 def register(request):
     new_user_info = request.data
 
@@ -29,21 +32,23 @@ def register(request):
     return Response()
 
 
-@api_view(['PUT'])
+@api_view(['POST'])
 @authentication_classes((SessionAuthentication, BasicAuthentication))
 @permission_classes((IsAuthenticated,))
 def create_channel(request):
     cid = request.data["cid"]
     to_address = request.data["to"]
     from_address = request.user.useraddress.address
-    if not channel.is_available(cid):
-        raise ValidationError("Channel id is not available")
+    owner = request.user
+    co_owner_hostname = request.data["co_owner_hostname"]
+    co_owner_port = request.data["co_owner_port"]
 
     channel.create_channel(from_address,
                            cid,
                            from_address,
                            to_address)
-    deferred_save_channel(cid, request.user)
+    _deferred_save_channel(cid, owner, from_address, to_address, co_owner_hostname, co_owner_port)
+    _deferred_call_co_owner_save_channel(cid, from_address, to_address, co_owner_hostname, co_owner_port)
     return Response()
 
 
@@ -56,12 +61,15 @@ def list_channels(request):
 
 
 @api_view(['POST'])
-def register_created_channel(request):
+def save_channel(request):
     cid = request.data["cid"]
-    owner = UserAddress.objects.get(address=channel.get_to(cid)).user
+    from_address = request.data["from"]
+    to_address = request.data["to"]
+    owner = UserAddress.objects.get(address=request.data["owner"]).user
+    co_owner_hostname = request.data["co_owner_hostname"]
+    co_owner_port = request.data["co_owner_port"]
 
-    micropayments_channel = MicropaymentsChannel.create(cid, owner)
-    micropayments_channel.save()
+    _save_channel(cid, owner, from_address, to_address, co_owner_hostname, co_owner_port)
     return Response()
 
 
@@ -72,10 +80,6 @@ def open_channel(request, cid):
     cid = int(cid)
     from_address = request.user.useraddress.address
     balance = request.data["balance"]
-    if from_address != channel.get_from(cid):
-        raise ValidationError("User is not from recipient of the channel")
-    if channel.get_stage(cid) != channel.ChannelStage.EMPTY:
-        raise ValidationError("Channel is in invalid stage")
 
     channel.open_channel(from_address, cid, balance)
     return Response()
@@ -87,19 +91,38 @@ def open_channel(request, cid):
 def confirm_channel(request, cid):
     cid = int(cid)
     balance = request.data["balance"]
-    if request.user.useraddress.address != channel.get_to(cid):
-        raise ValidationError("User is not from recipient of the channel")
-    if channel.get_stage(cid) != channel.ChannelStage.PARTIALLY_CONFIRMED:
-        raise ValidationError("Channel is in invalid stage")
+    to_address = request.user.useraddress.address
 
-    channel.confirm_channel(request.user.useraddress.address, cid, balance)
+    channel.confirm_channel(to_address, cid, balance)
     return Response()
 
 
-@deferred_task
-def deferred_save_channel(cid, user):
-    if channel.get_from(cid) != user.useraddress.address:
-        raise ValueError("Channel does not exist on the blockchain")
+def _save_channel(cid, owner, from_address, to_address, co_owner_hostname, co_owner_port):
+    _validate_channel(cid, from_address, to_address)
 
-    micropayments_channel = MicropaymentsChannel.create(cid, user)
+    co_owner_location = Location.objects.get_or_create(hostname=co_owner_hostname, port=co_owner_port)
+    micropayments_channel = MicropaymentsChannel.create(cid, owner, co_owner_location)
     micropayments_channel.save()
+
+
+@deferred_task
+def _deferred_save_channel(cid, owner, from_address, to_address, co_owner_hostname, co_owner_port):
+    _save_channel(cid, owner, from_address, to_address, co_owner_hostname, co_owner_port)
+
+
+def _validate_channel(cid, from_address, to_address):
+    if channel.get_from(cid) != from_address:
+        raise ValidationError("Channel from address is different on the blockchain")
+    if channel.get_to(cid) != to_address:
+        raise ValidationError("Channel to address is different on the blockchain")
+
+
+@deferred_task
+def _deferred_call_co_owner_save_channel(cid, from_address, to_address, co_owner_hostname, co_owner_port):
+    requests.post("http://%s:%s/node/channels/save/" % (co_owner_hostname, co_owner_port), {
+        "cid": cid,
+        "from": from_address,
+        "to": to_address,
+        "owner": to_address,
+        "co_owner_hostname": settings.SERVER_HOSTNAME,
+        "co_owner_port": settings.SERVER_PORT})

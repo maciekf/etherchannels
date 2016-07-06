@@ -141,6 +141,12 @@ REST_FRAMEWORK = {
 }
 
 
+# Server external address
+
+SERVER_HOSTNAME = 'localhost'
+
+SERVER_PORT = 8000
+
 # Ethereum client properties
 
 ETHEREUM_HOSTNAME = 'localhost'

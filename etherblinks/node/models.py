@@ -16,16 +16,29 @@ class UserAddress(models.Model):
         return "[user=%s, address=%s]" % (self.user, self.address)
 
 
+class Location(models.Model):
+    hostname = models.CharField(max_length=100)
+    port = models.IntegerField()
+
+    @classmethod
+    def create(cls, hostname, port):
+        return cls(hostname=hostname, port=port)
+
+    def __unicode__(self):
+        return "[hostname=%s, port=%s]" % (self.hostname, self.port)
+
+
 class MicropaymentsChannel(models.Model):
     channel_id = models.CharField(max_length=100)
     owner = models.ForeignKey(User)
+    co_owner_location = models.ForeignKey(Location)
 
     @classmethod
-    def create(cls, channel_id, owner):
-        return cls(channel_id=channel_id, owner=owner)
+    def create(cls, channel_id, owner, co_owner_location):
+        return cls(channel_id=channel_id, owner=owner, co_owner_location=co_owner_location)
 
     def __unicode__(self):
-        return "[channel_id=%s, owner=%s]" % (self.channel_id, self.owner)
+        return "[channel_id=%s, owner=%s, co_owner_location%s]" % (self.channel_id, self.owner, self.co_owner_location)
 
 
 class ChannelState(models.Model):
