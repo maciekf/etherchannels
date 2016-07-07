@@ -98,8 +98,12 @@ def confirm_channel(request, cid):
 
 
 @api_view(['GET'])
+@authentication_classes((SessionAuthentication, BasicAuthentication))
+@permission_classes((IsAuthenticated,))
 def get_channel(request, cid):
     cid = int(cid)
+    owner = request.user
+
     channel_info = {
         "stage": channel.get_stage(cid),
         "from": channel.get_from(cid),
@@ -109,6 +113,16 @@ def get_channel(request, cid):
         "balance_timestamp": channel.get_balance_timestamp(cid),
         "closing_block_number": channel.get_closing_block_number(cid)
     }
+
+    updated_channel = MicropaymentsChannel.objects.get(channel_id=cid, owner=owner)
+    channel_states = ChannelState.objects.filter(channel=updated_channel)
+    if len(channel_states) == 1:
+        channel_state = channel_states[0]
+        channel_info["offline_state"] = {
+            "from_balance": int(channel_state.from_balance),
+            "to_balance": int(channel_state.to_balance),
+            "balance_timestamp": int(channel_state.balance_timestamp),
+        }
 
     return Response(channel_info)
 
@@ -201,6 +215,69 @@ def confirm_update_channel(request, cid):
     ChannelState.objects.filter(channel=updated_channel).delete()
     channel_state.second_signature = second_signature
     channel_state.save()
+
+    return Response()
+
+
+@api_view(['POST'])
+def commit_update_channel(request, cid):
+    cid = int(cid)
+    owner = request.user
+    owner_address = owner.useraddress.address
+
+    updated_channel = MicropaymentsChannel.objects.get(channel_id=cid, owner=owner)
+    channel_states = ChannelState.objects.filter(channel=updated_channel)
+
+    if len(channel_states) == 1:
+        channel_state = channel_states[0]
+        channel.update_channel_state(owner_address,
+                                     cid,
+                                     int(channel_state.balance_timestamp),
+                                     int(channel_state.from_balance),
+                                     int(channel_state.to_balance),
+                                     int(channel_state.second_signature))
+
+    return Response()
+
+
+@api_view(['POST'])
+@authentication_classes((SessionAuthentication, BasicAuthentication))
+@permission_classes((IsAuthenticated,))
+def request_closing_channel(request, cid):
+    cid = int(cid)
+    owner = request.user
+    owner_address = owner.useraddress.address
+
+    channel.request_closing_channel(owner_address, cid)
+
+    return Response()
+
+
+@api_view(['POST'])
+@authentication_classes((SessionAuthentication, BasicAuthentication))
+@permission_classes((IsAuthenticated,))
+def close_channel(request, cid):
+    cid = int(cid)
+    owner = request.user
+    owner_address = owner.useraddress.address
+
+    channel.close_channel(owner_address, cid)
+
+    return Response()
+
+
+@api_view(['POST'])
+@authentication_classes((SessionAuthentication, BasicAuthentication))
+@permission_classes((IsAuthenticated,))
+def withdraw_from_channel(request, cid):
+    cid = int(cid)
+    owner = request.user
+    owner_address = owner.useraddress.address
+
+    if owner_address == channel.get_from(cid):
+        channel.withdraw_from_channel(owner_address, cid)
+    else:
+        channel.withdraw_to_channel(owner_address, cid)
 
     return Response()
 
