@@ -1,6 +1,6 @@
 import requests
 
-from apps import deferred_task
+from apps import deferred_task, monitor_channel
 
 from django.contrib.auth.models import User
 from django.conf import settings
@@ -288,6 +288,7 @@ def _save_channel(cid, owner, from_address, to_address, co_owner_hostname, co_ow
     co_owner_location, created = Location.objects.get_or_create(hostname=co_owner_hostname, port=co_owner_port)
     micropayments_channel = MicropaymentsChannel.create(cid, owner, co_owner_location)
     micropayments_channel.save()
+    monitor_channel(micropayments_channel)
 
 
 @deferred_task

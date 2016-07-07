@@ -7,12 +7,11 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime, timedelta
 
 from django.apps import AppConfig
+from django.conf import settings
 
+from monitor import check_channel
 
-logging.basicConfig()
-
-scheduler = BackgroundScheduler()
-scheduler.start()
+from models import MicropaymentsChannel
 
 
 def deferred_task(func):
@@ -22,5 +21,19 @@ def deferred_task(func):
     return inner_function
 
 
+def monitor_channel(micropayments_channel):
+    scheduler.add_job(check_channel, 'interval', args=[micropayments_channel], minutes=settings.MONITORING_MINUTES)
+
+
 class NodeConfig(AppConfig):
     name = 'node'
+
+
+logging.basicConfig()
+
+scheduler = BackgroundScheduler()
+scheduler.start()
+
+
+for channel in MicropaymentsChannel.objects.all():
+    monitor_channel(channel)
