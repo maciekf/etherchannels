@@ -22,6 +22,8 @@ contract MicropaymentsNetwork
 
         uint balanceTimestamp;
         uint closingBlockNumber;
+
+        mapping(bytes32 => bool) hashesUsed;
     }
 
     uint public constant closingDelay = 10;
@@ -147,10 +149,10 @@ contract MicropaymentsNetwork
         }
     }
 
-    function assertHash(bytes32 _data, bytes32 _hash)
+    function assertHash(uint _cid, bytes32 _data, bytes32 _hash)
         internal
     {
-        if (getHash(_data) != _hash)
+        if ((channels[_cid].hashesUsed[_hash]) || (getHash(_data) != _hash))
         {
             throw;
         }
@@ -369,10 +371,11 @@ contract MicropaymentsNetwork
         assertMatchingBalance(_cid, _balanceTimestamp);
         assertStillValid(_timeout);
         assertSaneHTLC(_cid, _fromToDelta);
-        assertHash(_data, _hash);
+        assertHash(_cid, _data, _hash);
         assertSignedByBoth(_cid, getHTLCHash(_cid, _balanceTimestamp, _timeout, _hash, _fromToDelta), _sigV, _sigR, _sigS);
 
         channels[_cid].fromBalance = uint(int(channels[_cid].fromBalance) - _fromToDelta);
         channels[_cid].toBalance = uint(int(channels[_cid].toBalance) + _fromToDelta);
+        channels[_cid].hashesUsed[_hash] = true;
     }
 }
