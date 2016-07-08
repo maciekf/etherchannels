@@ -14,6 +14,8 @@ urlpatterns = [
     url(r'^channels/(?P<cid>[0-9]+)/payment/send/$', views.update_channel),
     url(r'^channels/(?P<cid>[0-9]+)/payment/accept/$', views.accept_update_channel),
     url(r'^channels/(?P<cid>[0-9]+)/payment/confirm/$', views.confirm_update_channel),
+    url(r'^channels/(?P<cid>[0-9]+)/htlc/send/$', views.send_htlc),
+    url(r'^channels/(?P<cid>[0-9]+)/htlc/accept/$', views.accept_htlc),
     url(r'^channels/(?P<cid>[0-9]+)/sync/$', views.commit_update_channel),
     url(r'^channels/(?P<cid>[0-9]+)/lock/$', views.request_closing_channel),
     url(r'^channels/(?P<cid>[0-9]+)/close/$', views.close_channel),
