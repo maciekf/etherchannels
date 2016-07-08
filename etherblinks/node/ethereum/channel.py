@@ -93,10 +93,11 @@ def get_htlc_random_data():
 
 
 def get_hash(data):
+    data = binascii.unhexlify(data)
     hash_bytes = ethereum_client.call(
         settings.MICROPAYMENTS_NETWORK_ADDRESS,
         'getHash(bytes32)',
-        [binascii.unhexlify(data)],
+        [data],
         ['bytes32'])
     return binascii.hexlify(hash_bytes[0])
 
@@ -116,10 +117,11 @@ def get_update_signature(signer, cid, balance_timestamp, from_balance, to_balanc
 
 
 def get_htlc_hash(cid, balance_timestamp, timeout, contract_hash, from_to_delta):
+    contract_hash = binascii.unhexlify(contract_hash)
     hash_bytes = ethereum_client.call(
         settings.MICROPAYMENTS_NETWORK_ADDRESS,
         'getHTLCHash(uint256,uint256,uint256,bytes32,int256)',
-        [cid, balance_timestamp, timeout, binascii.unhexlify(contract_hash), from_to_delta],
+        [cid, balance_timestamp, timeout, contract_hash, from_to_delta],
         ['bytes32'])
     return binascii.hexlify(hash_bytes[0])
 
@@ -130,11 +132,12 @@ def get_htlc_signature(signer, cid, balance_timestamp, timeout, contract_hash, f
 
 
 def get_signer(signed_hash, signature):
+    signed_hash = binascii.unhexlify(signed_hash)
     sig_v, sig_r, sig_s = _unpack_signature(signature)
     return ethereum_client.call(
         settings.MICROPAYMENTS_NETWORK_ADDRESS,
         'getSigner(bytes32,uint8,bytes32,bytes32)',
-        [binascii.unhexlify(signed_hash), sig_v, sig_r, sig_s],
+        [signed_hash, sig_v, sig_r, sig_s],
         ['address'])[0]
 
 
