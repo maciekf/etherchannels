@@ -1,4 +1,5 @@
 import binascii
+import random
 
 from django.conf import settings
 from jsonrpc import EthJsonRpc
@@ -13,13 +14,6 @@ class ChannelStage(object):
     CONFIRMED = 2
     CLOSING = 3
     CLOSED = 4
-
-
-def _unpack_signature(signature):
-    sig_v = int(signature[128:130]) + 27
-    sig_r = binascii.unhexlify(signature[0:64])
-    sig_s = binascii.unhexlify(signature[64:128])
-    return sig_v, sig_r, sig_s
 
 
 def is_available(cid):
@@ -92,6 +86,10 @@ def get_closing_block_number(cid):
         'getClosingBlockNumber(uint256)',
         [cid],
         ['uint256'])[0]
+
+
+def get_htlc_random_data():
+    return binascii.hexlify(bytearray(random.getrandbits(8) for _ in xrange(32)))
 
 
 def get_hash(data):
@@ -200,9 +198,18 @@ def update_channel_state(sender, cid, balance_timestamp, from_balance, to_balanc
 
 
 def resolve_htlc(sender, cid, balance_timestamp, timeout, contract_hash, from_to_delta, data, signature):
+    contract_hash = binascii.unhexlify(contract_hash)
+    data = binascii.unhexlify(data)
     sig_v, sig_r, sig_s = _unpack_signature(signature)
     ethereum_client.call_with_transaction(
         sender,
         settings.MICROPAYMENTS_NETWORK_ADDRESS,
         'resolveHTLC(uint256,uint256,uint256,bytes32,int256,bytes32,uint8,bytes32,bytes32)',
         [cid, balance_timestamp, timeout, contract_hash, from_to_delta, data, sig_v, sig_r, sig_s])
+
+
+def _unpack_signature(signature):
+    sig_v = int(signature[128:130]) + 27
+    sig_r = binascii.unhexlify(signature[0:64])
+    sig_s = binascii.unhexlify(signature[64:128])
+    return sig_v, sig_r, sig_s

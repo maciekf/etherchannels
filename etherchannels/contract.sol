@@ -158,6 +158,15 @@ contract MicropaymentsNetwork
         }
     }
 
+    function assertNotSpent(uint _cid, uint _balanceTimestamp, bytes32 _hash)
+        internal
+    {
+        if (channels[_cid].hashesUsed[getHTLCSpendingHash(_balanceTimestamp, _hash)])
+        {
+            throw;
+        }
+    }
+
     function assertSignedByBoth(
         uint _cid,
         bytes32 _sigHash,
@@ -172,6 +181,13 @@ contract MicropaymentsNetwork
         {
             throw;
         }
+    }
+
+    function getHTLCSpendingHash(uint _balanceTimestamp, bytes32 _hash)
+        constant
+        returns (bytes32)
+    {
+        return sha3(_balanceTimestamp, _hash);
     }
 
     function getHash(bytes32 _data)
@@ -213,6 +229,13 @@ contract MicropaymentsNetwork
         returns(address)
     {
         return ecrecover(_sigHash, _sigV, _sigR, _sigS);
+    }
+
+    function getTimestampInSeconds()
+        constant
+        returns(uint)
+    {
+        return now;
     }
     
     function createChannel(uint _cid, address _from, address _to)
@@ -376,6 +399,6 @@ contract MicropaymentsNetwork
 
         channels[_cid].fromBalance = uint(int(channels[_cid].fromBalance) - _fromToDelta);
         channels[_cid].toBalance = uint(int(channels[_cid].toBalance) + _fromToDelta);
-        channels[_cid].hashesUsed[_hash] = true;
+        channels[_cid].hashesUsed[getHTLCSpendingHash(_balanceTimestamp, _hash)] = true;
     }
 }
