@@ -4,10 +4,11 @@ from apps import deferred_task, monitor_channel
 
 from django.contrib.auth.models import User
 from django.conf import settings
+from django.db.models import Sum
 
 from ethereum import channel
 
-from models import ChannelState, Location, MicropaymentsChannel, UserAddress
+from models import ChannelState, HashedTimelockContract, Location, MicropaymentsChannel, UserAddress
 
 from rest_framework.authentication import SessionAuthentication, BasicAuthentication
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
@@ -136,8 +137,7 @@ def update_channel(request, cid):
     sender = request.user
     sender_address = sender.useraddress.address
 
-    if sender_address != channel.get_from(cid) and sender_address != channel.get_to(cid):
-        raise ValidationError("User has to be an owner of the channel")
+    _assert_owns_channel(sender_address, cid)
 
     from_balance, to_balance, balance_timestamp = _get_updated_channel_state(cid, sender, to_send)
     update_signature = channel.get_update_signature(sender_address, cid, balance_timestamp, from_balance, to_balance)
@@ -159,23 +159,13 @@ def accept_update_channel(request, cid):
     from_balance = request.data["from_balance"]
     to_balance = request.data["to_balance"]
     second_signature = request.data["second_signature"]
-
-    if receiver_address != channel.get_from(cid) and receiver_address != channel.get_to(cid):
-        raise ValidationError("User has to be an owner of the channel")
-
-    current_from_balance, current_to_balance, current_balance_timestamp = _get_channel_state(cid, receiver)
-    if balance_timestamp <= current_balance_timestamp:
-        raise ValidationError("Balance timestamp is too old")
-
     update_hash = channel.get_update_hash(cid, balance_timestamp, from_balance, to_balance)
     sender_address = channel.get_signer(update_hash, second_signature)
 
-    if receiver_address == channel.get_from(cid):
-        if sender_address != channel.get_to(cid) or from_balance < current_from_balance:
-            raise ValidationError("Payment information is invalid")
-    else:
-        if sender_address != channel.get_from(cid) or to_balance < current_to_balance:
-            raise ValidationError("Payment information is invalid")
+    _assert_owns_channel(receiver_address, cid)
+    _assert_balance_timestamp(cid, receiver, balance_timestamp)
+    _assert_both_owners(cid, sender_address, receiver_address)
+    _assert_update_value(cid, receiver, from_balance, to_balance)
 
     updated_channel = MicropaymentsChannel.objects.get(channel_id=cid, owner=receiver)
     ChannelState.objects.filter(channel=updated_channel).delete()
@@ -196,9 +186,6 @@ def confirm_update_channel(request, cid):
     second_signature = request.data["second_signature"]
     balance_timestamp = request.data["balance_timestamp"]
 
-    if sender_address != channel.get_from(cid) and sender_address != channel.get_to(cid):
-        raise ValidationError("User has to be an owner of the channel")
-
     updated_channel = MicropaymentsChannel.objects.get(channel_id=cid, owner=sender)
     channel_state = ChannelState.objects.get(channel=updated_channel, balance_timestamp=balance_timestamp)
 
@@ -208,9 +195,8 @@ def confirm_update_channel(request, cid):
                                           int(channel_state.to_balance))
     receiver_address = channel.get_signer(update_hash, second_signature)
 
-    if (sender_address == channel.get_from(cid) and receiver_address != channel.get_to(cid)) or \
-            (receiver_address == channel.get_from(cid) and sender_address != channel.get_to(cid)):
-        raise ValidationError("Payment information is invalid")
+    _assert_owns_channel(sender_address, cid)
+    _assert_both_owners(cid, sender_address, receiver_address)
 
     ChannelState.objects.filter(channel=updated_channel).delete()
     channel_state.second_signature = second_signature
@@ -238,6 +224,78 @@ def commit_update_channel(request, cid):
                                      int(channel_state.from_balance),
                                      int(channel_state.to_balance),
                                      int(channel_state.second_signature))
+
+    return Response()
+
+
+@api_view(['POST'])
+@authentication_classes((SessionAuthentication, BasicAuthentication))
+@permission_classes((IsAuthenticated,))
+def send_htlc(request, cid):
+    cid = int(cid)
+    sender = request.user
+    sender_address = sender.useraddress.address
+    value = request.data["value"]
+    timeout = request.data["timeout"]
+
+    _assert_owns_channel(sender_address, cid)
+
+    _, _, balance_timestamp = _get_channel_state(cid, sender)
+    from_to_delta = _get_from_to_delta(cid, sender, value)
+
+    micropayments_channel = MicropaymentsChannel.objects.get(channel_id=cid, owner=sender)
+    contract_data = channel.get_htlc_random_data()
+    contract_hash = channel.get_hash(contract_data)
+    htlc = HashedTimelockContract.create(micropayments_channel,
+                                         balance_timestamp,
+                                         timeout,
+                                         contract_hash,
+                                         from_to_delta,
+                                         contract_data,
+                                         "")
+    htlc.save()
+
+    htlc_signature = channel.get_htlc_signature(sender_address,
+                                                cid,
+                                                balance_timestamp,
+                                                timeout,
+                                                contract_hash,
+                                                from_to_delta)
+
+    _send_co_owner_htlc(cid, sender, balance_timestamp, timeout, contract_hash, from_to_delta, htlc_signature)
+
+    return Response({"data": contract_data})
+
+
+@api_view(['POST'])
+def accept_htlc(request, cid):
+    cid = int(cid)
+    receiver_address = request["receiver"]
+    receiver = UserAddress.objects.get(address=receiver_address).user
+    balance_timestamp = request["balance_timestamp"]
+    timeout = request["timeout"]
+    contract_hash = request["contract_hash"]
+    from_to_delta = request["from_to_delta"]
+    second_signature = request["second_signature"]
+
+    htlc_hash = channel.get_htlc_hash(cid, balance_timestamp, timeout, contract_hash, from_to_delta)
+    sender_address = channel.get_signer(htlc_hash, second_signature)
+
+    _assert_owns_channel(receiver_address, cid)
+    _assert_balance_timestamp(cid, receiver, balance_timestamp)
+    _assert_htlc_value(cid, receiver_address, from_to_delta)
+    _assert_sufficient_funds_in_channel(cid, receiver, from_to_delta)
+    _assert_both_owners(cid, sender_address, receiver_address)
+
+    micropayments_channel = MicropaymentsChannel.objects.get(channel_id=cid, owner=receiver)
+    htlc = HashedTimelockContract.create(micropayments_channel,
+                                         balance_timestamp,
+                                         timeout,
+                                         contract_hash,
+                                         from_to_delta,
+                                         "",
+                                         second_signature)
+    htlc.save()
 
     return Response()
 
@@ -282,6 +340,52 @@ def withdraw_from_channel(request, cid):
         channel.withdraw_to_channel(owner_address, cid)
 
     return Response()
+
+
+def _assert_owns_channel(address, cid):
+    if address != channel.get_from(cid) and address != channel.get_to(cid):
+        raise ValidationError("User has to be an owner of the channel")
+
+
+def _assert_both_owners(cid, address1, address2):
+    if address1 == channel.get_from(cid) and address2 == channel.get_to(cid):
+        return
+    if address1 == channel.get_to(cid) and address2 == channel.get_from(cid):
+        return
+    raise ValidationError("Payment signature is invalid")
+
+
+def _assert_htlc_value(cid, receiver_address, from_to_delta):
+    if (receiver_address == channel.get_from(cid) and from_to_delta > 0) or \
+            (receiver_address == channel.get_to(cid) and from_to_delta < 0):
+        raise ValidationError("Negative payment")
+
+
+def _assert_update_value(cid, receiver, from_balance, to_balance):
+    receiver_address = receiver.useraddress.address
+    current_from_balance, current_to_balance, current_balance_timestamp = _get_channel_state(cid, receiver)
+    if (receiver_address == channel.get_from(cid) and from_balance < current_from_balance) or \
+            (receiver_address == channel.get_to(cid) and to_balance < current_to_balance):
+        raise ValidationError("Negative payment")
+
+
+def _assert_balance_timestamp(cid, owner, balance_timestamp):
+    _, _, current_balance_timestamp = _get_channel_state(cid, owner)
+    if balance_timestamp <= current_balance_timestamp:
+        raise ValidationError("Balance timestamp is too old")
+
+
+def _assert_sufficient_funds_in_channel(cid, receiver, from_to_delta):
+        receiver_address = receiver.useraddress.address
+        from_balance, to_balance, balance_timestamp = _get_channel_state(cid, receiver)
+        sender_locked_balance = _get_balance_received_by_htlc(cid, receiver, balance_timestamp)
+
+        if receiver_address == channel.get_from(cid):
+            if to_balance - sender_locked_balance < -from_to_delta:
+                raise ValidationError("Not sufficient funds to perform this operation")
+        elif receiver_address != channel.get_to(cid):
+            if from_balance - sender_locked_balance < from_to_delta:
+                raise ValidationError("Not sufficient funds to perform this operation")
 
 
 def _save_channel(cid, owner, from_address, to_address, co_owner_hostname, co_owner_port):
@@ -380,7 +484,50 @@ def _send_co_owner_accept_update_channel(cid, owner, balance_timestamp, update_s
     _send_to_co_owner(cid, owner, url, data)
 
 
+def _send_co_owner_htlc(cid, owner, balance_timestamp, timeout, contract_hash, from_to_delta, htlc_signature):
+    url = "/node/channels/%s/htlc/accept/" % cid
+    co_owner = channel.get_from(cid) if channel.get_from(cid) != owner.useraddress.address else channel.get_to(cid)
+    data = {
+        "receiver": co_owner,
+        "balance_timestamp": balance_timestamp,
+        "timeout": timeout,
+        "contract_hash": contract_hash,
+        "from_to_delta": from_to_delta,
+        "second_signature": htlc_signature
+    }
+    _send_to_co_owner(cid, owner, url, data)
+
+
 def _send_to_co_owner(cid, owner, url, data):
     co_owner_location = MicropaymentsChannel.objects.get(channel_id=cid, owner=owner).co_owner_location
     url = "http://%s:%s%s" % (co_owner_location.hostname, co_owner_location.port, url)
     requests.post(url, json=data)
+
+
+def _get_from_to_delta(cid, sender, value):
+    sender_address = sender.useraddress.address
+    from_balance, to_balance, balance_timestamp = _get_channel_state(cid, sender)
+    sender_locked_balance = _get_balance_locked_by_htlc(cid, sender, balance_timestamp)
+
+    if sender_address == channel.get_from(cid):
+        if from_balance - sender_locked_balance < value:
+            raise ValidationError("Not sufficient funds to perform this operation")
+        return value
+    elif sender_address != channel.get_to(cid):
+        if to_balance - sender_locked_balance < value:
+            raise ValidationError("Not sufficient funds to perform this operation")
+        return -value
+
+
+def _get_balance_locked_by_htlc(cid, owner, balance_timestamp):
+    micropayments_channel = MicropaymentsChannel.objects.get(channel_id=cid, owner=owner)
+    return HashedTimelockContract.objects.filter(channel=micropayments_channel,
+                                                 balance_timestamp=balance_timestamp,
+                                                 second_signature='').aggregate(Sum("from_to_delta"))
+
+
+def _get_balance_received_by_htlc(cid, owner, balance_timestamp):
+    micropayments_channel = MicropaymentsChannel.objects.get(channel_id=cid, owner=owner)
+    return HashedTimelockContract.objects.filter(channel=micropayments_channel,
+                                                 balance_timestamp=balance_timestamp
+                                                 ).exclude(second_signature='').aggregate(Sum("from_to_delta"))
