@@ -149,10 +149,10 @@ contract MicropaymentsNetwork
         }
     }
 
-    function assertHash(uint _cid, bytes32 _data, bytes32 _hash)
+    function assertHash(bytes32 _data, bytes32 _hash)
         internal
     {
-        if ((channels[_cid].hashesUsed[_hash]) || (getHash(_data) != _hash))
+        if (getHash(_data) != _hash)
         {
             throw;
         }
@@ -394,7 +394,8 @@ contract MicropaymentsNetwork
         assertMatchingBalance(_cid, _balanceTimestamp);
         assertStillValid(_timeout);
         assertSaneHTLC(_cid, _fromToDelta);
-        assertHash(_cid, _data, _hash);
+        assertHash(_data, _hash);
+        assertNotSpent(_cid, _balanceTimestamp, _hash);
         assertSignedByBoth(_cid, getHTLCHash(_cid, _balanceTimestamp, _timeout, _hash, _fromToDelta), _sigV, _sigR, _sigS);
 
         channels[_cid].fromBalance = uint(int(channels[_cid].fromBalance) - _fromToDelta);
