@@ -20,3 +20,8 @@ dist
 hs_err_pid*
 
 *.pyc
+
+etherblinks/.idea/
+etherblinks/db.sqlite3
+etherblinks/node/migrations/
+venv/

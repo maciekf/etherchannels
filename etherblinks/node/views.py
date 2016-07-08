@@ -220,6 +220,8 @@ def confirm_update_channel(request, cid):
 
 
 @api_view(['POST'])
+@authentication_classes((SessionAuthentication, BasicAuthentication))
+@permission_classes((IsAuthenticated,))
 def commit_update_channel(request, cid):
     cid = int(cid)
     owner = request.user
