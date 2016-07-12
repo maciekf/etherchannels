@@ -133,6 +133,7 @@ def send_htlc(request, cid):
 
     _, _, balance_timestamp = _get_channel_state(cid, sender)
     from_to_delta = _get_from_to_delta(cid, sender, value)
+
     contract_data = channel.get_htlc_random_data()
     contract_hash = channel.get_hash(contract_data)
 
@@ -233,7 +234,7 @@ def resolve_htlc_offline(request, cid):
     _assert_channel_confirmed(cid)
     _assert_equal_balance_timestamp(cid, sender, balance_timestamp)
     _assert_data(contract_data, contract_hash)
-    _assert_all_htlcs_updated(cid, sender)
+    _assert_all_htlcs_updated(cid, sender, balance_timestamp+1)
 
     from_balance, to_balance, balance_timestamp = _get_channel_state(cid, sender)
     micropayments_channel = MicropaymentsChannel.objects.get(channel_id=cid, owner=sender)
@@ -249,7 +250,6 @@ def resolve_htlc_offline(request, cid):
     to_balance += from_to_delta
 
     _update_htlcs(cid, sender)
-    print ("Calling")
     _update_channel(cid, sender, from_balance, to_balance)
 
     return Response()
@@ -288,7 +288,6 @@ def accept_htlc_update(request, cid):
 @api_view(['POST'])
 def accept_update_channel(request, cid):
     cid = int(cid)
-    print (request.data)
     receiver_address = request.data["receiver"]
     receiver = UserAddress.objects.get(address=receiver_address).user
     balance_timestamp = request.data["balance_timestamp"]
@@ -298,15 +297,12 @@ def accept_update_channel(request, cid):
     update_hash = channel.get_update_hash(cid, balance_timestamp, from_balance, to_balance)
     sender_address = channel.get_signer(update_hash, second_signature)
 
-    print ("a")
     _assert_owns_channel(receiver_address, cid)
     _assert_channel_confirmed(cid)
     _assert_balance_timestamp(cid, receiver, balance_timestamp)
     _assert_both_owners(cid, sender_address, receiver_address)
-    _assert_all_htlcs_updated(cid, receiver)
+    _assert_all_htlcs_updated(cid, receiver, balance_timestamp)
     _assert_update_value(cid, receiver, balance_timestamp, from_balance, to_balance)
-
-    print ("b")
 
     updated_channel = MicropaymentsChannel.objects.get(channel_id=cid, owner=receiver)
     ChannelState.objects.filter(channel=updated_channel).delete()
@@ -436,7 +432,7 @@ def _assert_update_value(cid, owner, balance_timestamp, from_balance, to_balance
     current_from_balance, current_to_balance, _ = _get_channel_state(cid, owner)
     micropayments_channel = MicropaymentsChannel.objects.get(channel_id=cid, owner=owner)
     htlcs = HashedTimelockContract.objects.filter(channel=micropayments_channel,
-                                                  balance_timestamp=balance_timestamp - 1).exclude(
+                                                  balance_timestamp=balance_timestamp-1).exclude(
                                                   second_signature='').exclude(
                                                   data='')
     if len(htlcs) != 1:
@@ -474,16 +470,27 @@ def _assert_sufficient_funds_in_channel(cid, receiver, from_to_delta):
         sender_locked_balance = _get_balance_received_by_htlc(cid, receiver, balance_timestamp)
 
         if receiver_address == channel.get_from(cid):
-            if to_balance - sender_locked_balance < -from_to_delta:
+            if to_balance - sender_locked_balance < -1 * from_to_delta:
                 raise ValidationError("Not sufficient funds to perform this operation")
         elif receiver_address != channel.get_to(cid):
             if from_balance - sender_locked_balance < from_to_delta:
                 raise ValidationError("Not sufficient funds to perform this operation")
 
 
-def _assert_all_htlcs_updated(cid, owner):
-    # TODO
-    pass
+def _assert_all_htlcs_updated(cid, owner, balance_timestamp):
+    micropayments_channel = MicropaymentsChannel.objects.get(channel_id=cid, owner=owner)
+    old_htlcs = HashedTimelockContract.objects.filter(channel=micropayments_channel,
+                                                      balance_timestamp=balance_timestamp-1,
+                                                      data=''
+                                                      ).exclude(second_signature='')
+    new_htlcs = HashedTimelockContract.objects.filter(channel=micropayments_channel,
+                                                      balance_timestamp=balance_timestamp
+                                                      ).exclude(second_signature='')
+    old_hashes = sorted([htlc.contract_hash for htlc in old_htlcs])
+    new_hashes = sorted([htlc.contract_hash for htlc in new_htlcs])
+
+    if old_hashes != new_hashes:
+        raise ValidationError("Not all htlcs are updated")
 
 
 def _assert_channel_confirmed(cid):
@@ -564,7 +571,8 @@ def _get_offline_channel_info(cid, owner):
     channel_states = ChannelState.objects.filter(channel=micropayments_channel)
     if len(channel_states) == 1:
         channel_state = channel_states[0]
-        htlcs = HashedTimelockContract.objects.filter(channel=micropayments_channel, balance_timestamp=int(channel_state.balance_timestamp))
+        htlcs = HashedTimelockContract.objects.filter(channel=micropayments_channel,
+                                                      balance_timestamp=int(channel_state.balance_timestamp))
         htlcs_info = []
         for htlc in htlcs:
             htlc_info = {
@@ -698,10 +706,10 @@ def _get_from_to_delta(cid, sender, value):
         if from_balance - sender_locked_balance < value:
             raise ValidationError("Not sufficient funds to perform this operation")
         return value
-    elif sender_address != channel.get_to(cid):
+    elif sender_address == channel.get_to(cid):
         if to_balance - sender_locked_balance < value:
             raise ValidationError("Not sufficient funds to perform this operation")
-        return -value
+        return -1 * value
 
 
 def _get_balance_locked_by_htlc(cid, owner, balance_timestamp):
