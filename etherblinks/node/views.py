@@ -370,6 +370,35 @@ def commit_update_channel(request, cid):
 @api_view(['POST'])
 @authentication_classes((SessionAuthentication, BasicAuthentication))
 @permission_classes((IsAuthenticated,))
+def commit_htlc(request, cid):
+    cid = int(cid)
+    owner = request.user
+    owner_address = owner.useraddress.address
+    contract_hash = request.data["hash"]
+
+    _assert_owns_channel(owner_address, cid)
+    _, _, balance_timestamp = _get_channel_state(cid, owner)
+
+    micropayments_channel = MicropaymentsChannel.objects.get(channel_id=cid, owner=owner)
+    htlc = HashedTimelockContract.objects.filter(channel=micropayments_channel,
+                                                 balance_timestamp=balance_timestamp,
+                                                 contract_hash=contract_hash)
+
+    channel.resolve_htlc(owner_address,
+                         cid,
+                         balance_timestamp,
+                         int(htlc.timeout),
+                         contract_hash,
+                         int(htlc.from_to_delta),
+                         htlc.data,
+                         htlc.second_signature)
+
+    return Response()
+
+
+@api_view(['POST'])
+@authentication_classes((SessionAuthentication, BasicAuthentication))
+@permission_classes((IsAuthenticated,))
 def request_closing_channel(request, cid):
     cid = int(cid)
     owner = request.user
