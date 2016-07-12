@@ -88,6 +88,16 @@ def get_closing_block_number(cid):
         ['uint256'])[0]
 
 
+def get_htlc_published_data(cid, balance_timestamp, contract_hash):
+    contract_hash = binascii.unhexlify(contract_hash)
+    data = ethereum_client.call(
+        settings.MICROPAYMENTS_NETWORK_ADDRESS,
+        'getHTLCSpendingData(uint256,uint256,bytes32)',
+        [cid, balance_timestamp, contract_hash],
+        ['bytes32'])
+    return binascii.hexlify(data[0])
+
+
 def get_htlc_random_data():
     return binascii.hexlify(bytearray(random.getrandbits(8) for _ in xrange(32)))
 

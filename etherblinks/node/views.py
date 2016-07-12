@@ -236,10 +236,10 @@ def send_htlc(request, cid):
 
     _, _, balance_timestamp = _get_channel_state(cid, sender)
     from_to_delta = _get_from_to_delta(cid, sender, value)
-
-    micropayments_channel = MicropaymentsChannel.objects.get(channel_id=cid, owner=sender)
     contract_data = channel.get_htlc_random_data()
     contract_hash = channel.get_hash(contract_data)
+
+    micropayments_channel = MicropaymentsChannel.objects.get(channel_id=cid, owner=sender)
     htlc = HashedTimelockContract.create(micropayments_channel,
                                          balance_timestamp,
                                          timeout,
@@ -264,20 +264,20 @@ def send_htlc(request, cid):
 @api_view(['POST'])
 def accept_htlc(request, cid):
     cid = int(cid)
-    receiver_address = request["receiver"]
+    receiver_address = request.data["receiver"]
     receiver = UserAddress.objects.get(address=receiver_address).user
-    balance_timestamp = request["balance_timestamp"]
-    timeout = request["timeout"]
-    contract_hash = request["contract_hash"]
-    from_to_delta = request["from_to_delta"]
-    second_signature = request["second_signature"]
+    balance_timestamp = request.data["balance_timestamp"]
+    timeout = request.data["timeout"]
+    contract_hash = request.data["contract_hash"]
+    from_to_delta = request.data["from_to_delta"]
+    second_signature = request.data["second_signature"]
 
     htlc_hash = channel.get_htlc_hash(cid, balance_timestamp, timeout, contract_hash, from_to_delta)
     sender_address = channel.get_signer(htlc_hash, second_signature)
 
     _assert_owns_channel(receiver_address, cid)
     _assert_channel_confirmed(cid)
-    _assert_balance_timestamp(cid, receiver, balance_timestamp)
+    _assert_equal_balance_timestamp(cid, receiver, balance_timestamp)
     _assert_htlc_value(cid, receiver_address, from_to_delta)
     _assert_sufficient_funds_in_channel(cid, receiver, from_to_delta)
     _assert_both_owners(cid, sender_address, receiver_address)
@@ -367,6 +367,12 @@ def _assert_update_value(cid, receiver, from_balance, to_balance):
 def _assert_balance_timestamp(cid, owner, balance_timestamp):
     _, _, current_balance_timestamp = _get_channel_state(cid, owner)
     if balance_timestamp <= current_balance_timestamp:
+        raise ValidationError("Balance timestamp is too old")
+
+
+def _assert_equal_balance_timestamp(cid, owner, balance_timestamp):
+    _, _, current_balance_timestamp = _get_channel_state(cid, owner)
+    if balance_timestamp != current_balance_timestamp:
         raise ValidationError("Balance timestamp is too old")
 
 
@@ -472,6 +478,18 @@ def _get_updated_channel_state(cid, sender, to_send):
     return from_balance, to_balance, balance_timestamp + 1
 
 
+def _update_htlcs(cid, owner):
+    _, _, balance_timestamp = _get_channel_state(cid, owner)
+    micropayments_channel = MicropaymentsChannel.objects.get(channel_id=cid, owner=owner)
+    htlcs = HashedTimelockContract.objects.filter(channel=micropayments_channel,
+                                                  balance_timestamp=balance_timestamp,
+                                                  second_signature='')
+    for htlc in htlcs:
+        htlc.pk = None
+        htlc.balance_timestamp = int(htlc.balance_timestamp) + 1
+        htlc.save()
+
+
 def _send_co_owner_update_channel(cid, owner, balance_timestamp, from_balance, to_balance, update_signature):
     url = "/node/channels/%s/payment/accept/" % cid
     co_owner = channel.get_from(cid) if channel.get_from(cid) != owner.useraddress.address else channel.get_to(cid)
@@ -533,13 +551,25 @@ def _get_from_to_delta(cid, sender, value):
 
 def _get_balance_locked_by_htlc(cid, owner, balance_timestamp):
     micropayments_channel = MicropaymentsChannel.objects.get(channel_id=cid, owner=owner)
-    return HashedTimelockContract.objects.filter(channel=micropayments_channel,
-                                                 balance_timestamp=balance_timestamp,
-                                                 second_signature='').aggregate(Sum("from_to_delta"))
+    htlcs = HashedTimelockContract.objects.filter(channel=micropayments_channel,
+                                                  balance_timestamp=balance_timestamp,
+                                                  second_signature='')
+
+    from_to_delta = 0
+    for htlc in htlcs:
+        from_to_delta += int(htlc.from_to_delta)
+
+    return from_to_delta
 
 
 def _get_balance_received_by_htlc(cid, owner, balance_timestamp):
     micropayments_channel = MicropaymentsChannel.objects.get(channel_id=cid, owner=owner)
-    return HashedTimelockContract.objects.filter(channel=micropayments_channel,
-                                                 balance_timestamp=balance_timestamp
-                                                 ).exclude(second_signature='').aggregate(Sum("from_to_delta"))
+    htlcs = HashedTimelockContract.objects.filter(channel=micropayments_channel,
+                                                  balance_timestamp=balance_timestamp
+                                                  ).exclude(second_signature='')
+
+    from_to_delta = 0
+    for htlc in htlcs:
+        from_to_delta += int(htlc.from_to_delta)
+
+    return from_to_delta
