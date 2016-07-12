@@ -138,6 +138,7 @@ def update_channel(request, cid):
     sender_address = sender.useraddress.address
 
     _assert_owns_channel(sender_address, cid)
+    _assert_channel_confirmed(cid)
 
     from_balance, to_balance, balance_timestamp = _get_updated_channel_state(cid, sender, to_send)
     update_signature = channel.get_update_signature(sender_address, cid, balance_timestamp, from_balance, to_balance)
@@ -163,6 +164,7 @@ def accept_update_channel(request, cid):
     sender_address = channel.get_signer(update_hash, second_signature)
 
     _assert_owns_channel(receiver_address, cid)
+    _assert_channel_confirmed(cid)
     _assert_balance_timestamp(cid, receiver, balance_timestamp)
     _assert_both_owners(cid, sender_address, receiver_address)
     _assert_update_value(cid, receiver, from_balance, to_balance)
@@ -239,6 +241,7 @@ def send_htlc(request, cid):
     timeout = request.data["timeout"]
 
     _assert_owns_channel(sender_address, cid)
+    _assert_channel_confirmed(cid)
 
     _, _, balance_timestamp = _get_channel_state(cid, sender)
     from_to_delta = _get_from_to_delta(cid, sender, value)
@@ -282,6 +285,7 @@ def accept_htlc(request, cid):
     sender_address = channel.get_signer(htlc_hash, second_signature)
 
     _assert_owns_channel(receiver_address, cid)
+    _assert_channel_confirmed(cid)
     _assert_balance_timestamp(cid, receiver, balance_timestamp)
     _assert_htlc_value(cid, receiver_address, from_to_delta)
     _assert_sufficient_funds_in_channel(cid, receiver, from_to_delta)
@@ -386,6 +390,11 @@ def _assert_sufficient_funds_in_channel(cid, receiver, from_to_delta):
         elif receiver_address != channel.get_to(cid):
             if from_balance - sender_locked_balance < from_to_delta:
                 raise ValidationError("Not sufficient funds to perform this operation")
+
+
+def _assert_channel_confirmed(cid):
+    if channel.get_stage(cid) != channel.ChannelStage.CONFIRMED:
+        raise ValidationError("Channel is not confirmed yet")
 
 
 def _save_channel(cid, owner, from_address, to_address, co_owner_hostname, co_owner_port):
