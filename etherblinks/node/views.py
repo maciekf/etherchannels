@@ -112,18 +112,9 @@ def get_channel(request, cid):
         "to": channel.get_to(cid),
         "to_balance": channel.get_to_balance(cid),
         "balance_timestamp": channel.get_balance_timestamp(cid),
-        "closing_block_number": channel.get_closing_block_number(cid)
+        "closing_block_number": channel.get_closing_block_number(cid),
+        "offline_state": _get_offline_channel_info(cid, owner)
     }
-
-    updated_channel = MicropaymentsChannel.objects.get(channel_id=cid, owner=owner)
-    channel_states = ChannelState.objects.filter(channel=updated_channel)
-    if len(channel_states) == 1:
-        channel_state = channel_states[0]
-        channel_info["offline_state"] = {
-            "from_balance": int(channel_state.from_balance),
-            "to_balance": int(channel_state.to_balance),
-            "balance_timestamp": int(channel_state.balance_timestamp),
-        }
 
     return Response(channel_info)
 
@@ -450,6 +441,18 @@ def _get_channel_state(cid, owner):
                int(stored_states[0].balance_timestamp)
     else:
         raise ValidationError("Previous transaction has been not accepted yet")
+
+
+def _get_offline_channel_info(cid, owner):
+    updated_channel = MicropaymentsChannel.objects.get(channel_id=cid, owner=owner)
+    channel_states = ChannelState.objects.filter(channel=updated_channel)
+    if len(channel_states) == 1:
+        channel_state = channel_states[0]
+        return {
+            "from_balance": int(channel_state.from_balance),
+            "to_balance": int(channel_state.to_balance),
+            "balance_timestamp": int(channel_state.balance_timestamp),
+        }
 
 
 def _get_updated_channel_state(cid, sender, to_send):
