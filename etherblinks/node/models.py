@@ -68,6 +68,7 @@ class HashedTimelockContract(models.Model):
     contract_hash = models.CharField(max_length=100)
     from_to_delta = models.CharField(max_length=100)
     data = models.CharField(max_length=100)
+    resolved = models.BooleanField(default=False)
     second_signature = models.CharField(max_length=150)
 
     @classmethod
