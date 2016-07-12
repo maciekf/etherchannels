@@ -155,7 +155,7 @@ def send_htlc(request, cid):
 
     _send_co_owner_htlc(cid, sender, balance_timestamp, timeout, contract_hash, from_to_delta, htlc_signature)
 
-    return Response({"data": contract_data})
+    return Response({"data": contract_data, "hash": contract_hash})
 
 
 @api_view(['POST'])
@@ -199,8 +199,8 @@ def claim_htlc_offline(request, cid):
     cid = int(cid)
     receiver = request.user
     receiver_address = receiver.useraddress.address
-    contract_data = request.data["contract_data"]
-    contract_hash = request.data["contract_hash"]
+    contract_data = request.data["data"]
+    contract_hash = request.data["hash"]
 
     _assert_owns_channel(receiver_address, cid)
     _assert_channel_confirmed(cid)
@@ -241,14 +241,15 @@ def resolve_htlc_offline(request, cid):
                                               balance_timestamp=balance_timestamp,
                                               contract_hash=contract_hash)
 
+    htlc.resolved = True
+    htlc.save()
+
     from_to_delta = int(htlc.from_to_delta)
     from_balance -= from_to_delta
     to_balance += from_to_delta
 
-    htlc.resolved = True
-    htlc.save()
-
     _update_htlcs(cid, sender)
+    print ("Calling")
     _update_channel(cid, sender, from_balance, to_balance)
 
     return Response()
@@ -287,6 +288,7 @@ def accept_htlc_update(request, cid):
 @api_view(['POST'])
 def accept_update_channel(request, cid):
     cid = int(cid)
+    print (request.data)
     receiver_address = request.data["receiver"]
     receiver = UserAddress.objects.get(address=receiver_address).user
     balance_timestamp = request.data["balance_timestamp"]
@@ -296,12 +298,15 @@ def accept_update_channel(request, cid):
     update_hash = channel.get_update_hash(cid, balance_timestamp, from_balance, to_balance)
     sender_address = channel.get_signer(update_hash, second_signature)
 
+    print ("a")
     _assert_owns_channel(receiver_address, cid)
     _assert_channel_confirmed(cid)
     _assert_balance_timestamp(cid, receiver, balance_timestamp)
     _assert_both_owners(cid, sender_address, receiver_address)
     _assert_all_htlcs_updated(cid, receiver)
     _assert_update_value(cid, receiver, balance_timestamp, from_balance, to_balance)
+
+    print ("b")
 
     updated_channel = MicropaymentsChannel.objects.get(channel_id=cid, owner=receiver)
     ChannelState.objects.filter(channel=updated_channel).delete()
@@ -428,7 +433,7 @@ def _assert_htlc_value(cid, receiver_address, from_to_delta):
 
 
 def _assert_update_value(cid, owner, balance_timestamp, from_balance, to_balance):
-    current_from_balance, current_to_balance, = _get_channel_state(cid, owner)
+    current_from_balance, current_to_balance, _ = _get_channel_state(cid, owner)
     micropayments_channel = MicropaymentsChannel.objects.get(channel_id=cid, owner=owner)
     htlcs = HashedTimelockContract.objects.filter(channel=micropayments_channel,
                                                   balance_timestamp=balance_timestamp - 1).exclude(
@@ -477,6 +482,7 @@ def _assert_sufficient_funds_in_channel(cid, receiver, from_to_delta):
 
 
 def _assert_all_htlcs_updated(cid, owner):
+    # TODO
     pass
 
 
@@ -529,6 +535,7 @@ def _deferred_call_co_owner_save_channel(cid, from_address, to_address, co_owner
 def _update_channel(cid, owner, from_balance, to_balance):
     owner_address = owner.useraddress.address
     _, _, balance_timestamp = _get_channel_state(cid, owner)
+    balance_timestamp += 1
     update_signature = channel.get_update_signature(owner_address, cid, balance_timestamp, from_balance, to_balance)
 
     updated_channel = MicropaymentsChannel.objects.get(channel_id=cid, owner=owner)
@@ -536,8 +543,6 @@ def _update_channel(cid, owner, from_balance, to_balance):
     channel_state.save()
 
     _send_co_owner_update_channel(cid, owner, balance_timestamp, from_balance, to_balance, update_signature)
-
-    return Response()
 
 
 def _get_channel_state(cid, owner):
@@ -555,14 +560,26 @@ def _get_channel_state(cid, owner):
 
 
 def _get_offline_channel_info(cid, owner):
-    updated_channel = MicropaymentsChannel.objects.get(channel_id=cid, owner=owner)
-    channel_states = ChannelState.objects.filter(channel=updated_channel)
+    micropayments_channel = MicropaymentsChannel.objects.get(channel_id=cid, owner=owner)
+    channel_states = ChannelState.objects.filter(channel=micropayments_channel)
     if len(channel_states) == 1:
         channel_state = channel_states[0]
+        htlcs = HashedTimelockContract.objects.filter(channel=micropayments_channel, balance_timestamp=int(channel_state.balance_timestamp))
+        htlcs_info = []
+        for htlc in htlcs:
+            htlc_info = {
+                "from_to_delta": int(htlc.from_to_delta),
+                "timeout": int(htlc.timeout),
+                "data": htlc.data,
+                "hash": htlc.contract_hash
+            }
+            htlcs_info.append(htlc_info)
+
         return {
             "from_balance": int(channel_state.from_balance),
             "to_balance": int(channel_state.to_balance),
             "balance_timestamp": int(channel_state.balance_timestamp),
+            "htlcs": htlcs_info
         }
 
 
@@ -602,18 +619,6 @@ def _update_htlcs(cid, owner):
                                                     htlc.contract_hash,
                                                     int(htlc.from_to_delta))
         _send_co_owner_htlc_update(cid, owner, int(htlc.balance_timestamp), htlc.contract_hash, htlc_signature)
-
-
-def _update_channel(cid, owner, from_balance, to_balance):
-    owner_address = owner.useraddress.address
-    _, _, balance_timestamp = _get_channel_state(cid, owner)
-    update_signature = channel.get_update_signature(owner_address, cid, balance_timestamp, from_balance, to_balance)
-
-    updated_channel = MicropaymentsChannel.objects.get(channel_id=cid, owner=owner)
-    channel_state = ChannelState.create(updated_channel, balance_timestamp, from_balance, to_balance, "")
-    channel_state.save()
-
-    _send_co_owner_update_channel(cid, owner, balance_timestamp, from_balance, to_balance, update_signature)
 
 
 def _send_co_owner_htlc_data(cid, owner, balance_timestamp, contract_data, contract_hash):
