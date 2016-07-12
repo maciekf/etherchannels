@@ -195,7 +195,7 @@ def accept_htlc(request, cid):
 @api_view(['POST'])
 @authentication_classes((SessionAuthentication, BasicAuthentication))
 @permission_classes((IsAuthenticated,))
-def resolve_htlc_offline(request, cid):
+def claim_htlc_offline(request, cid):
     cid = int(cid)
     receiver = request.user
     receiver_address = receiver.useraddress.address
@@ -221,7 +221,7 @@ def resolve_htlc_offline(request, cid):
 
 
 @api_view(['POST'])
-def accept_htlc_data(request, cid):
+def resolve_htlc_offline(request, cid):
     cid = int(cid)
     sender_address = request.data["sender"]
     sender = UserAddress.objects.get(address=sender_address).user
@@ -629,7 +629,7 @@ def _send_co_owner_htlc_data(cid, owner, balance_timestamp, contract_data, contr
 
 
 def _send_co_owner_update_channel(cid, owner, balance_timestamp, from_balance, to_balance, update_signature):
-    url = "/node/channels/%s/payment/accept/" % cid
+    url = "/node/channels/%s/update/accept/" % cid
     co_owner = channel.get_from(cid) if channel.get_from(cid) != owner.useraddress.address else channel.get_to(cid)
     data = {
         "receiver": co_owner,
@@ -642,7 +642,7 @@ def _send_co_owner_update_channel(cid, owner, balance_timestamp, from_balance, t
 
 
 def _send_co_owner_accept_update_channel(cid, owner, balance_timestamp, update_signature):
-    url = "/node/channels/%s/payment/confirm/" % cid
+    url = "/node/channels/%s/update/confirm/" % cid
     co_owner = channel.get_from(cid) if channel.get_from(cid) != owner.useraddress.address else channel.get_to(cid)
     data = {
         "sender": co_owner,
