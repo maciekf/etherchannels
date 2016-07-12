@@ -18,6 +18,7 @@ urlpatterns = [
     url(r'^channels/(?P<cid>[0-9]+)/htlc/claim/$', views.claim_htlc_offline),
     url(r'^channels/(?P<cid>[0-9]+)/htlc/resolve/$', views.resolve_htlc_offline),
     url(r'^channels/(?P<cid>[0-9]+)/htlc/update/accept/$', views.accept_htlc_update),
+    url(r'^channels/(?P<cid>[0-9]+)/htlc/sync/$', views.commit_htlc),
     url(r'^channels/(?P<cid>[0-9]+)/sync/$', views.commit_update_channel),
     url(r'^channels/(?P<cid>[0-9]+)/lock/$', views.request_closing_channel),
     url(r'^channels/(?P<cid>[0-9]+)/close/$', views.close_channel),
