@@ -115,7 +115,7 @@ contract MicropaymentsNetwork
     function assertMatchingBalance(uint _cid, uint _balanceTimestamp)
         internal
     {
-        if (_balanceTimestamp != channels[_cid].balanceTimestamp)
+        if (channels[_cid].balanceTimestamp < _balanceTimestamp)
         {
             throw;
         }
@@ -158,10 +158,10 @@ contract MicropaymentsNetwork
         }
     }
 
-    function assertNotSpent(uint _cid, uint _balanceTimestamp, bytes32 _data, bytes32 _hash)
+    function assertNotSpent(uint _cid, uint _fromToDelta, bytes32 _data, bytes32 _hash)
         internal
     {
-        if (getHTLCSpendingData(_cid, _balanceTimestamp, _hash) == getHash(_data))
+        if (getHTLCSpendingData(_cid, _fromToDelta, _hash) == getHash(_data))
         {
             throw;
         }
@@ -183,18 +183,18 @@ contract MicropaymentsNetwork
         }
     }
 
-    function getHTLCSpendingData(uint _cid, uint _balanceTimestamp, bytes32 _hash)
+    function getHTLCSpendingData(uint _cid, uint _fromToDelta, bytes32 _hash)
         constant
         returns (bytes32)
     {
-        return channels[_cid].hashesUsed[getHTLCSpendingHash(_balanceTimestamp, _hash)];
+        return channels[_cid].hashesUsed[getHTLCSpendingHash(_fromToDelta, _hash)];
     }
 
-    function getHTLCSpendingHash(uint _balanceTimestamp, bytes32 _hash)
+    function getHTLCSpendingHash(uint _fromToDelta, bytes32 _hash)
         constant
         returns (bytes32)
     {
-        return sha3(_balanceTimestamp, _hash);
+        return sha3(_fromToDelta, _hash);
     }
 
     function getHash(bytes32 _data)
@@ -402,11 +402,11 @@ contract MicropaymentsNetwork
         assertStillValid(_timeout);
         assertSaneHTLC(_cid, _fromToDelta);
         assertHash(_data, _hash);
-        assertNotSpent(_cid, _balanceTimestamp, _data, _hash);
+        assertNotSpent(_cid, _fromToDelta, _data, _hash);
         assertSignedByBoth(_cid, getHTLCHash(_cid, _balanceTimestamp, _timeout, _hash, _fromToDelta), _sigV, _sigR, _sigS);
 
         channels[_cid].fromBalance = uint(int(channels[_cid].fromBalance) - _fromToDelta);
         channels[_cid].toBalance = uint(int(channels[_cid].toBalance) + _fromToDelta);
-        channels[_cid].hashesUsed[getHTLCSpendingHash(_balanceTimestamp, _hash)] = _data;
+        channels[_cid].hashesUsed[getHTLCSpendingHash(_fromToDelta, _hash)] = _data;
     }
 }

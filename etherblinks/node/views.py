@@ -438,6 +438,29 @@ def withdraw_from_channel(request, cid):
     return Response()
 
 
+def _get_available_addresses(sender_address):
+    sender = UserAddress.objects.get(address=sender_address)
+    micropayments_channels = MicropaymentsChannel.objects.filter(owner=sender)
+    available_addresses = []
+    for micropayments_channel in micropayments_channels:
+        available_addresses.append(_get_availability(micropayments_channel, sender_address))
+    return available_addresses
+
+
+def _get_availability(micropayments_channel, sender_address):
+    return {
+        "address": _get_second_address(micropayments_channel.channel_id, sender_address),
+        "available": _get_available_balance(micropayments_channel.channel_id, micropayments_channel.owner)
+    }
+
+
+def _get_second_address(cid, address):
+    if channel.get_from(cid) == address:
+        return channel.get_to(cid)
+    else:
+        return channel.get_from(cid)
+
+
 def _assert_owns_channel(address, cid):
     if address != channel.get_from(cid) and address != channel.get_to(cid):
         raise ValidationError("User has to be an owner of the channel")
@@ -739,6 +762,18 @@ def _get_from_to_delta(cid, sender, value):
         if to_balance - sender_locked_balance < value:
             raise ValidationError("Not sufficient funds to perform this operation")
         return -1 * value
+
+
+def _get_available_balance(cid, owner):
+    owner_address = owner.useraddress.address
+
+    from_balance, to_balance, balance_timestamp = _get_channel_state(cid, owner)
+    owner_locked_balance = _get_balance_locked_by_htlc(cid, owner, balance_timestamp)
+
+    if channel.get_from(cid) == owner_address:
+        return from_balance - owner_locked_balance
+    else:
+        return to_balance - owner_locked_balance
 
 
 def _get_balance_locked_by_htlc(cid, owner, balance_timestamp):
