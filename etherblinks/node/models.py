@@ -80,6 +80,10 @@ class ChannelState(models.Model):
                    signature=signature,
                    second_signature=second_signature)
 
+    @classmethod
+    def delete_old(cls, micropayments_channel, balance_timestamp):
+        cls.objects.filter(channel=micropayments_channel).exclude(balance_timestamp=balance_timestamp).delete()
+
     def __unicode__(self):
         return "[channel=%s, balance_timestamp=%s, from_balance=%s, to_balance=%s]" % \
                (self.channel, self.balance_timestamp, self.from_balance, self.to_balance)

@@ -21,6 +21,13 @@ def deferred_task(func):
     return inner_function
 
 
+def async_task(func):
+    def inner_function(*args, **kwargs):
+        run_date = datetime.now()
+        scheduler.add_job(func, args=args, kwargs=kwargs, run_date=run_date)
+    return inner_function
+
+
 def monitor_channel(micropayments_channel):
     scheduler.add_job(check_channel, 'interval', args=[micropayments_channel], minutes=settings.MONITORING_MINUTES)
 
