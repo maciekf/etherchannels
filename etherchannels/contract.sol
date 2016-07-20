@@ -158,15 +158,6 @@ contract MicropaymentsNetwork
         }
     }
 
-    function assertNotSpent(uint _cid, int _fromToDelta, bytes32 _data, bytes32 _hash)
-        internal
-    {
-        if (getHTLCSpendingData(_cid, _fromToDelta, _hash) == getHash(_data))
-        {
-            throw;
-        }
-    }
-
     function assertSignedByBoth(
         uint _cid,
         bytes32 _sigHash,
@@ -181,6 +172,27 @@ contract MicropaymentsNetwork
         {
             throw;
         }
+    }
+
+
+    function assertNotSpent(uint _cid, int _fromToDelta, bytes32 _data, bytes32 _hash)
+        internal
+    {
+        if (getHTLCSpendingData(_cid, _fromToDelta, _hash) == _data)
+        {
+            throw;
+        }
+    }
+
+    function getHTLCInvalidationTimeoutExtension(uint _cid, int _fromToDelta, bytes32 _data, bytes32 _hash)
+        constant
+        returns (uint)
+    {
+        if (getHTLCSpendingData(_cid, -1 * _fromToDelta, _hash) == _data)
+        {
+            return 10 minutes;
+        }
+        return 0;
     }
 
     function getHTLCSpendingData(uint _cid, int _fromToDelta, bytes32 _hash)
@@ -404,6 +416,8 @@ contract MicropaymentsNetwork
         assertHash(_data, _hash);
         assertNotSpent(_cid, _fromToDelta, _data, _hash);
         assertSignedByBoth(_cid, getHTLCHash(_cid, _balanceTimestamp, _timeout, _hash, _fromToDelta), _sigV, _sigR, _sigS);
+
+        _timeout = _timeout + getHTLCInvalidationTimeoutExtension(_cid, _fromToDelta, _data, _hash);
 
         channels[_cid].fromBalance = uint(int(channels[_cid].fromBalance) - _fromToDelta);
         channels[_cid].toBalance = uint(int(channels[_cid].toBalance) + _fromToDelta);
