@@ -158,7 +158,7 @@ contract MicropaymentsNetwork
         }
     }
 
-    function assertNotSpent(uint _cid, uint _fromToDelta, bytes32 _data, bytes32 _hash)
+    function assertNotSpent(uint _cid, int _fromToDelta, bytes32 _data, bytes32 _hash)
         internal
     {
         if (getHTLCSpendingData(_cid, _fromToDelta, _hash) == getHash(_data))
@@ -183,14 +183,14 @@ contract MicropaymentsNetwork
         }
     }
 
-    function getHTLCSpendingData(uint _cid, uint _fromToDelta, bytes32 _hash)
+    function getHTLCSpendingData(uint _cid, int _fromToDelta, bytes32 _hash)
         constant
         returns (bytes32)
     {
         return channels[_cid].hashesUsed[getHTLCSpendingHash(_fromToDelta, _hash)];
     }
 
-    function getHTLCSpendingHash(uint _fromToDelta, bytes32 _hash)
+    function getHTLCSpendingHash(int _fromToDelta, bytes32 _hash)
         constant
         returns (bytes32)
     {
