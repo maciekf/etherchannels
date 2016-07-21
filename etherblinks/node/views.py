@@ -129,37 +129,17 @@ def send_htlc(request, cid):
     owner = request.user
     micropayments_channel = MicropaymentsChannel.get(cid, owner)
     value = request.data["value"]
-    timeout = request.data["timeout"]
+    hops = request.data["hops"]
+    timeout = _get_min_timeout(hops)
 
     _assert_owns_channel(cid, micropayments_channel.get_owner_address())
     _assert_channel_confirmed(cid)
     _assert_no_transaction_in_progress(micropayments_channel)
 
-    _, _, balance_timestamp = _get_channel_state(micropayments_channel)
-    from_to_delta = _get_from_to_delta(micropayments_channel, value)
-
-    _assert_sufficient_funds_in_channel(micropayments_channel, from_to_delta)
-
     contract_data = channel.get_htlc_random_data()
     contract_hash = channel.get_hash(contract_data)
 
-    htlc_signature = channel.get_htlc_signature(micropayments_channel.get_owner_address(),
-                                                cid,
-                                                balance_timestamp,
-                                                timeout,
-                                                contract_hash,
-                                                from_to_delta)
-
-    htlc = HashedTimelockContract.create(micropayments_channel,
-                                         balance_timestamp,
-                                         timeout,
-                                         contract_hash,
-                                         from_to_delta,
-                                         contract_data,
-                                         htlc_signature)
-    htlc.save()
-
-    _send_co_owner_htlc(htlc)
+    _send_htlc(micropayments_channel, value, timeout, contract_data, contract_hash, hops)
 
     return Response({"data": contract_data, "hash": contract_hash})
 
@@ -168,8 +148,24 @@ def send_htlc(request, cid):
 def accept_htlc(request, cid):
     cid = int(cid)
 
-    htlc = _parse_htlc(cid, request.data)
+    hops = request.data["hops"]
+    _assert_hops_count(hops)
+
+    htlc = _parse_htlc(cid, request.data["htlc"])
+    _assert_timeout(htlc.get_timeout(), hops)
     htlc.save()
+
+    if hops:
+        next_cid = hops[0]
+        del hops[0]
+        next_channel = MicropaymentsChannel.get(next_cid, htlc.get_owner())
+
+        _send_htlc(next_channel,
+                   abs(htlc.get_from_to_delta()),
+                   _get_min_timeout(hops) + 10,
+                   "",
+                   htlc.get_hash(),
+                   hops)
 
     return Response({})
 
@@ -337,6 +333,31 @@ def withdraw_from_channel(request, cid):
         channel.withdraw_to_channel(owner_address, cid)
 
     return Response({})
+
+
+def _send_htlc(micropayments_channel, value, timeout, contract_data, contract_hash, hops):
+    _, _, balance_timestamp = _get_channel_state(micropayments_channel)
+    from_to_delta = _get_from_to_delta(micropayments_channel, value)
+
+    _assert_sufficient_funds_in_channel(micropayments_channel, from_to_delta)
+
+    htlc_signature = channel.get_htlc_signature(micropayments_channel.get_owner_address(),
+                                                micropayments_channel.get_cid(),
+                                                balance_timestamp,
+                                                timeout,
+                                                contract_hash,
+                                                from_to_delta)
+
+    htlc = HashedTimelockContract.create(micropayments_channel,
+                                         balance_timestamp,
+                                         timeout,
+                                         contract_hash,
+                                         from_to_delta,
+                                         contract_data,
+                                         htlc_signature)
+    htlc.save()
+
+    _send_co_owner_htlc(htlc, hops)
 
 
 def _parse_htlc(cid, htlc_data, invalidating=False):
@@ -519,6 +540,16 @@ def _assert_channel_confirmed(cid):
         raise ValidationError("Channel is not confirmed yet")
 
 
+def _assert_hops_count(hops):
+    if 7 < len(hops):
+        raise ValidationError("Too many hops")
+
+
+def _assert_timeout(timeout, hops):
+    if _get_min_timeout(hops) < timeout:
+        raise ValidationError("Too many hops")
+
+
 def _validate_channel(cid, owner, from_address, to_address):
     if owner.useraddress.address != from_address and owner.useraddress.address != to_address:
         raise ValidationError("User is not a participant in this channel")
@@ -573,9 +604,13 @@ def _send_co_owner_update_channel(micropayments_channel, channel_state, htlc, in
     return _send_to_co_owner(micropayments_channel, url, data)
 
 
-def _send_co_owner_htlc(htlc):
+def _send_co_owner_htlc(htlc, hops):
     url = "/node/channels/%s/htlc/accept/" % htlc.get_cid()
-    return _send_to_co_owner(MicropaymentsChannel.get(htlc.get_cid(), htlc.get_owner()), url, htlc.to_request_dict())
+    data = {
+        "htlc": htlc.to_request_dict(),
+        "hops": hops
+    }
+    return _send_to_co_owner(MicropaymentsChannel.get(htlc.get_cid(), htlc.get_owner()), url, data)
 
 
 def _send_to_co_owner(micropayments_channel, url, data):
@@ -586,6 +621,10 @@ def _send_to_co_owner(micropayments_channel, url, data):
         raise ValidationError("Co-owner did not respond correctly")
 
     return response.json()
+
+
+def _get_min_timeout(hops):
+    return channel.get_timestamp_in_seconds() + settings.HTLC_TIMEOUT_SECS_PER_EDGE * (len(hops) + 1)
 
 
 def _get_second_owner_address(cid, owner):
