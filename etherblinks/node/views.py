@@ -4,6 +4,7 @@ from apps import async_task, deferred_task, monitor_channel
 
 from django.contrib.auth.models import User
 from django.conf import settings
+from django.utils.synch import RWLock
 
 from ethereum import channel
 
@@ -16,6 +17,28 @@ from rest_framework.decorators import api_view, authentication_classes, permissi
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+
+
+locks_lock = RWLock()
+locks = {}
+
+
+def _lock(cid):
+    locks_lock.reader_enters()
+    channel_lock = locks[cid]
+    locks_lock.reader_leaves()
+    if not channel_lock:
+        locks_lock.writer_enters()
+        if not locks[cid]:
+            locks[cid] = RWLock()
+            channel_lock = locks[cid]
+        locks_lock.writer_leaves()
+
+    channel_lock.writer_enters()
+
+
+def _unlock(cid):
+    locks[cid].writer_leaves()
 
 
 @api_view(['POST'])
@@ -60,6 +83,28 @@ def create_channel(request):
 def list_channels(request):
     channel_ids = [user_channel.channel_id for user_channel in MicropaymentsChannel.objects.filter(owner=request.user)]
     return Response(channel_ids)
+
+
+@api_view(['POST'])
+def node_info(request):
+    address = request.data["address"]
+    owner = UserAddress.objects.get(address=address).user
+
+    channel_infos = []
+    for user_channel in MicropaymentsChannel.objects.filter(owner=owner):
+        if channel.get_stage(user_channel.get_cid()) != channel.ChannelStage.CONFIRMED:
+            continue
+
+        channel_infos.append({
+            "cid": user_channel.get_cid(),
+            "co_owner": {
+                "address": _get_second_owner_address(user_channel.get_cid(), user_channel.get_owner_address()),
+                "hostname": user_channel.get_co_owner_location().get_hostname(),
+                "port": user_channel.get_co_owner_location().get_port()
+            }
+        })
+
+    return Response({"confirmed_channels": channel_infos})
 
 
 @api_view(['POST'])
@@ -126,48 +171,57 @@ def get_channel(request, cid):
 @permission_classes((IsAuthenticated,))
 def send_htlc(request, cid):
     cid = int(cid)
-    owner = request.user
-    micropayments_channel = MicropaymentsChannel.get(cid, owner)
-    value = request.data["value"]
-    hops = request.data["hops"]
-    timeout = _get_min_timeout(hops)
 
-    _assert_owns_channel(cid, micropayments_channel.get_owner_address())
-    _assert_channel_confirmed(cid)
-    _assert_no_transaction_in_progress(micropayments_channel)
+    _lock(cid)
+    try:
+        owner = request.user
+        micropayments_channel = MicropaymentsChannel.get(cid, owner)
+        value = request.data["value"]
+        hops = request.data["hops"]
+        timeout = _get_min_timeout(hops)
 
-    contract_data = channel.get_htlc_random_data()
-    contract_hash = channel.get_hash(contract_data)
+        _assert_owns_channel(cid, micropayments_channel.get_owner_address())
+        _assert_channel_confirmed(cid)
+        _assert_no_transaction_in_progress(micropayments_channel)
 
-    _send_htlc(micropayments_channel, value, timeout, contract_data, contract_hash, hops)
+        contract_data = channel.get_htlc_random_data()
+        contract_hash = channel.get_hash(contract_data)
 
-    return Response({"data": contract_data, "hash": contract_hash})
+        _send_htlc(micropayments_channel, value, timeout, contract_data, contract_hash, hops)
+
+        return Response({"data": contract_data, "hash": contract_hash})
+    finally:
+        _unlock(cid)
 
 
 @api_view(['POST'])
 def accept_htlc(request, cid):
     cid = int(cid)
 
-    hops = request.data["hops"]
-    _assert_hops_count(hops)
+    _lock(cid)
+    try:
+        hops = request.data["forward"]
+        _assert_hops_count(hops)
 
-    htlc = _parse_htlc(cid, request.data["htlc"])
-    _assert_timeout(htlc.get_timeout(), hops)
-    htlc.save()
+        htlc = _parse_htlc(cid, request.data["htlc"])
+        _assert_timeout(htlc.get_timeout(), hops)
+        htlc.save()
 
-    if hops:
-        next_cid = hops[0]
-        del hops[0]
-        next_channel = MicropaymentsChannel.get(next_cid, htlc.get_owner())
+        if hops:
+            next_cid = hops[0]
+            del hops[0]
+            next_channel = MicropaymentsChannel.get(next_cid, htlc.get_owner())
 
-        _send_htlc(next_channel,
-                   abs(htlc.get_from_to_delta()),
-                   _get_min_timeout(hops) + 10,
-                   "",
-                   htlc.get_hash(),
-                   hops)
+            _send_htlc(next_channel,
+                       abs(htlc.get_from_to_delta()),
+                       _get_min_timeout(hops) + 10,
+                       "",
+                       htlc.get_hash(),
+                       hops)
 
-    return Response({})
+        return Response({})
+    finally:
+        _unlock(cid)
 
 
 @api_view(['POST'])
@@ -175,78 +229,87 @@ def accept_htlc(request, cid):
 @permission_classes((IsAuthenticated,))
 def claim_htlc_offline(request, cid):
     cid = int(cid)
-    owner = request.user
-    micropayments_channel = MicropaymentsChannel.get(cid, owner)
-    contract_data = request.data["data"]
-    contract_hash = request.data["hash"]
 
-    _assert_owns_channel(cid, micropayments_channel.get_owner_address())
-    _assert_channel_confirmed(cid)
-    _assert_no_transaction_in_progress(micropayments_channel)
-    _assert_data(contract_data, contract_hash)
+    _lock(cid)
+    try:
+        owner = request.user
+        micropayments_channel = MicropaymentsChannel.get(cid, owner)
+        contract_data = request.data["data"]
+        contract_hash = request.data["hash"]
 
-    htlc = HashedTimelockContract.objects.get(channel=micropayments_channel,
-                                              contract_hash=contract_hash,
-                                              resolved=False)
+        _assert_owns_channel(cid, micropayments_channel.get_owner_address())
+        _assert_channel_confirmed(cid)
+        _assert_no_transaction_in_progress(micropayments_channel)
+        _assert_data(contract_data, contract_hash)
 
-    htlc.data = contract_data
-    htlc.save()
+        htlc = HashedTimelockContract.objects.get(channel=micropayments_channel,
+                                                  contract_hash=contract_hash,
+                                                  resolved=False)
 
-    _update_channel(micropayments_channel, htlc)
+        htlc.data = contract_data
+        htlc.save()
 
-    return Response({})
+        _update_channel(micropayments_channel, htlc)
+
+        return Response({})
+    finally:
+        _unlock(cid)
 
 
 @api_view(['POST'])
 def resolve_htlc_offline(request, cid):
     cid = int(cid)
 
-    _assert_data(request.data["htlc"]["data"], request.data["htlc"]["hash"])
-
-    channel_state = _parse_channel_state(cid, request.data["channel_state"])
-
-    micropayments_channel = channel_state.get_channel()
-    htlc = HashedTimelockContract.objects.get(channel=micropayments_channel,
-                                              contract_hash=request.data["htlc"]["hash"],
-                                              resolved=False)
-    htlc.data = request.data["htlc"]["data"]
-    htlc.save()
-
-    _assert_update_value(channel_state, htlc.get_from_to_delta())
-
-    channel_state.save()
-
-    invalidating_htlc_data = {
-        "balance_timestamp": channel_state.get_balance_timestamp(),
-        "timeout": htlc.get_timeout(),
-        "hash": htlc.get_hash(),
-        "from_to_delta": -1 * htlc.get_from_to_delta(),
-        "signature": request.data["invalidating_htlc_signature"]
-    }
-
+    _lock(cid)
     try:
-        invalidating_htlc = _parse_htlc(cid, invalidating_htlc_data, True)
-        invalidating_htlc.resolved = True
-        invalidating_htlc.save()
-    except ValidationError:
-        channel_state.delete()
-        raise
+        _assert_data(request.data["htlc"]["data"], request.data["htlc"]["hash"])
 
-    htlc.resolved = True
-    htlc.save()
+        channel_state = _parse_channel_state(cid, request.data["channel_state"])
 
-    signature = channel.get_update_signature(micropayments_channel.get_owner_address(),
-                                             cid,
-                                             channel_state.get_balance_timestamp(),
-                                             channel_state.get_from_balance(),
-                                             channel_state.get_to_balance())
-    channel_state.signature = signature
-    channel_state.save()
-    ChannelState.delete_old(micropayments_channel, channel_state.get_balance_timestamp())
+        micropayments_channel = channel_state.get_channel()
+        htlc = HashedTimelockContract.objects.get(channel=micropayments_channel,
+                                                  contract_hash=request.data["htlc"]["hash"],
+                                                  resolved=False)
+        htlc.data = request.data["htlc"]["data"]
+        htlc.save()
 
-    _async_claim_chained_htlc(request.data["htlc"]["data"], request.data["htlc"]["hash"])
+        _assert_update_value(channel_state, htlc.get_from_to_delta())
 
-    return Response({"signature": channel_state.get_signature()})
+        channel_state.save()
+
+        invalidating_htlc_data = {
+            "balance_timestamp": channel_state.get_balance_timestamp(),
+            "timeout": htlc.get_timeout(),
+            "hash": htlc.get_hash(),
+            "from_to_delta": -1 * htlc.get_from_to_delta(),
+            "signature": request.data["invalidating_htlc_signature"]
+        }
+
+        try:
+            invalidating_htlc = _parse_htlc(cid, invalidating_htlc_data, True)
+            invalidating_htlc.resolved = True
+            invalidating_htlc.save()
+        except ValidationError:
+            channel_state.delete()
+            raise
+
+        htlc.resolved = True
+        htlc.save()
+
+        signature = channel.get_update_signature(micropayments_channel.get_owner_address(),
+                                                 cid,
+                                                 channel_state.get_balance_timestamp(),
+                                                 channel_state.get_from_balance(),
+                                                 channel_state.get_to_balance())
+        channel_state.signature = signature
+        channel_state.save()
+        ChannelState.delete_old(micropayments_channel, channel_state.get_balance_timestamp())
+
+        _async_claim_chained_htlc(request.data["htlc"]["data"], request.data["htlc"]["hash"])
+
+        return Response({"signature": channel_state.get_signature()})
+    finally:
+        _unlock(cid)
 
 
 @api_view(['POST'])

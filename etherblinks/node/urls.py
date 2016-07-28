@@ -5,6 +5,7 @@ from . import views
 urlpatterns = [
     url(r'^auth/register/$', views.register),
     url(r'^auth/', include('rest_framework.urls', namespace='rest_framework')),
+    url(r'^info/', views.node_info),
     url(r'^channels/save/$', views.save_channel),
     url(r'^channels/create/$', views.create_channel),
     url(r'^channels/all/$', views.list_channels),

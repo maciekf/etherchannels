@@ -1,4 +1,4 @@
-contract MicropaymentsNetwork
+contract MicropaymentNetwork
 {
 
     enum ChannelStage
@@ -10,7 +10,7 @@ contract MicropaymentsNetwork
         Closed
     }
 
-    struct MicropaymentsChannel
+    struct MicropaymentChannel
     {
         ChannelStage stage;
 
@@ -27,8 +27,9 @@ contract MicropaymentsNetwork
     }
 
     uint public constant closingDelay = 10;
+    uint public constant htlcTimeoutClosingDelay = 10 minutes;
 
-    mapping(uint => MicropaymentsChannel) channels;
+    mapping(uint => MicropaymentChannel) channels;
     mapping(uint => bool) reserved;
     
     function MicropaymentsNetwork()
@@ -190,7 +191,7 @@ contract MicropaymentsNetwork
     {
         if (getHTLCSpendingData(_cid, -1 * _fromToDelta, _hash) == _data)
         {
-            return 10 minutes;
+            return htlcTimeoutClosingDelay;
         }
         return 0;
     }
@@ -262,7 +263,7 @@ contract MicropaymentsNetwork
         assertAvailable(_cid);
 
         reserved[_cid] = true;
-        channels[_cid] = MicropaymentsChannel(ChannelStage.Empty, _from, 0, _to, 0, 0, 0);
+        channels[_cid] = MicropaymentChannel(ChannelStage.Empty, _from, 0, _to, 0, 0, 0);
     }
 
     function getStage(uint _cid)
