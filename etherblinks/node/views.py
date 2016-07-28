@@ -285,13 +285,9 @@ def resolve_htlc_offline(request, cid):
             "signature": request.data["invalidating_htlc_signature"]
         }
 
-        try:
-            invalidating_htlc = _parse_htlc(cid, invalidating_htlc_data, True)
-            invalidating_htlc.resolved = True
-            invalidating_htlc.save()
-        except ValidationError:
-            channel_state.delete()
-            raise
+        invalidating_htlc = _parse_htlc(cid, invalidating_htlc_data, True)
+        invalidating_htlc.resolved = True
+        invalidating_htlc.save()
 
         htlc.resolved = True
         htlc.save()
