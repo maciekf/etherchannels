@@ -12,10 +12,14 @@ from models import ChannelState, HashedTimelockContract, Location, Micropayments
 
 from monitor import push_update_channel
 
+from renderers import BalancePostFormBrowsableAPIRenderer, CreateChannelPostFormBrowsableAPIRenderer, \
+    RegisterPostFormBrowsableAPIRenderer
+
 from rest_framework.authentication import SessionAuthentication, BasicAuthentication
-from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.decorators import api_view, authentication_classes, permission_classes, renderer_classes
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
 
 
@@ -42,6 +46,7 @@ def _unlock(cid):
 
 
 @api_view(['POST'])
+@renderer_classes((JSONRenderer, RegisterPostFormBrowsableAPIRenderer))
 def register(request):
     new_user_info = request.data
 
@@ -60,13 +65,14 @@ def register(request):
 @api_view(['POST'])
 @authentication_classes((SessionAuthentication, BasicAuthentication))
 @permission_classes((IsAuthenticated,))
+@renderer_classes((JSONRenderer, CreateChannelPostFormBrowsableAPIRenderer))
 def create_channel(request):
-    cid = request.data["cid"]
+    cid = int(request.data["cid"])
     to_address = request.data["to"]
     from_address = request.user.useraddress.address
     owner = request.user
     co_owner_hostname = request.data["to_hostname"]
-    co_owner_port = request.data["to_port"]
+    co_owner_port = int(request.data["to_port"])
 
     channel.create_channel(from_address,
                            cid,
@@ -123,10 +129,11 @@ def save_channel(request):
 @api_view(['POST'])
 @authentication_classes((SessionAuthentication, BasicAuthentication))
 @permission_classes((IsAuthenticated,))
+@renderer_classes((JSONRenderer, BalancePostFormBrowsableAPIRenderer))
 def open_channel(request, cid):
     cid = int(cid)
     from_address = request.user.useraddress.address
-    balance = request.data["balance"]
+    balance = int(request.data["balance"])
 
     channel.open_channel(from_address, cid, balance)
     return Response({})
@@ -135,9 +142,10 @@ def open_channel(request, cid):
 @api_view(['POST'])
 @authentication_classes((SessionAuthentication, BasicAuthentication))
 @permission_classes((IsAuthenticated,))
+@renderer_classes((JSONRenderer, BalancePostFormBrowsableAPIRenderer))
 def confirm_channel(request, cid):
     cid = int(cid)
-    balance = request.data["balance"]
+    balance = int(request.data["balance"])
     to_address = request.user.useraddress.address
 
     channel.confirm_channel(to_address, cid, balance)
@@ -332,6 +340,7 @@ def commit_htlc(request, cid):
     owner = request.user
     owner_address = owner.useraddress.address
     contract_hash = request.data["hash"]
+    contract_data = request.data["data"]
 
     _assert_owns_channel(cid, owner_address)
     micropayments_channel = MicropaymentsChannel.objects.get(channel_id=cid, owner=owner)
@@ -346,7 +355,7 @@ def commit_htlc(request, cid):
                          htlc.get_timeout(),
                          contract_hash,
                          htlc.get_from_to_delta(),
-                         htlc.get_data(),
+                         contract_data,
                          htlc.get_signature())
 
     return Response({})
