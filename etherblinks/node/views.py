@@ -1,3 +1,4 @@
+import random
 import requests
 
 from apps import async_task, deferred_task, monitor_channel
@@ -67,7 +68,7 @@ def register(request):
 @permission_classes((IsAuthenticated,))
 @renderer_classes((JSONRenderer, CreateChannelPostFormBrowsableAPIRenderer))
 def create_channel(request):
-    cid = int(request.data["cid"])
+    cid = int(random.getrandbits(128))
     to_address = request.data["to"]
     from_address = request.user.useraddress.address
     owner = request.user
@@ -80,7 +81,7 @@ def create_channel(request):
                            to_address)
     _deferred_save_channel(cid, owner, from_address, to_address, co_owner_hostname, co_owner_port)
     _deferred_call_co_owner_save_channel(cid, from_address, to_address, co_owner_hostname, co_owner_port)
-    return Response({})
+    return Response({"cid": cid})
 
 
 @api_view(['GET'])
@@ -233,22 +234,20 @@ def accept_htlc(request, cid):
 
 
 @api_view(['POST'])
-@authentication_classes((SessionAuthentication, BasicAuthentication))
-@permission_classes((IsAuthenticated,))
 def claim_htlc_offline(request, cid):
     cid = int(cid)
 
     _lock(cid)
     try:
-        owner = request.user
+        owner_address = request.data["address"]
+        owner = UserAddress.objects.get(address=owner_address).user
         micropayments_channel = MicropaymentsChannel.get(cid, owner)
         contract_data = request.data["data"]
-        contract_hash = request.data["hash"]
+        contract_hash = channel.get_hash(contract_data)
 
         _assert_owns_channel(cid, micropayments_channel.get_owner_address())
         _assert_channel_confirmed(cid)
         _assert_no_transaction_in_progress(micropayments_channel)
-        _assert_data(contract_data, contract_hash)
 
         htlc = HashedTimelockContract.objects.get(channel=micropayments_channel,
                                                   contract_hash=contract_hash,
@@ -359,6 +358,22 @@ def commit_htlc(request, cid):
                          htlc.get_signature())
 
     return Response({})
+
+
+@api_view(['POST'])
+@authentication_classes((SessionAuthentication, BasicAuthentication))
+@permission_classes((IsAuthenticated,))
+def send_payment(request):
+    value = int(request.data["value"])
+    address = request.data["address"]
+
+
+@api_view(['POST'])
+@authentication_classes((SessionAuthentication, BasicAuthentication))
+@permission_classes((IsAuthenticated,))
+def payment_status(request):
+    data = request.data["data"]
+
 
 
 @api_view(['POST'])
