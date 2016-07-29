@@ -106,6 +106,10 @@ def get_timestamp_in_seconds():
         ['uint256'])[0]
 
 
+def get_block_number():
+    return ethereum_client.eth_blockNumber()
+
+
 def get_htlc_random_data():
     return binascii.hexlify(bytearray(random.getrandbits(8) for _ in xrange(32)))
 
