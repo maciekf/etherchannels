@@ -270,13 +270,13 @@ def resolve_htlc_offline(request, cid):
 
     _lock(cid)
     try:
-        _assert_data(request.data["htlc"]["data"], request.data["htlc"]["hash"])
+        contract_hash = channel.get_hash(request.data["htlc"]["data"])
 
         channel_state = _parse_channel_state(cid, request.data["channel_state"])
 
         micropayments_channel = channel_state.get_channel()
         htlc = HashedTimelockContract.objects.get(channel=micropayments_channel,
-                                                  contract_hash=request.data["htlc"]["hash"],
+                                                  contract_hash=contract_hash,
                                                   resolved=False)
         htlc.data = request.data["htlc"]["data"]
         htlc.save()
@@ -309,7 +309,7 @@ def resolve_htlc_offline(request, cid):
         channel_state.save()
         ChannelState.delete_old(micropayments_channel, channel_state.get_balance_timestamp())
 
-        _async_claim_chained_htlc(request.data["htlc"]["data"], request.data["htlc"]["hash"])
+        _async_claim_chained_htlc(request.data["htlc"]["data"], contract_hash)
 
         return Response({"signature": channel_state.get_signature()})
     finally:
@@ -665,7 +665,6 @@ def _send_co_owner_update_channel(micropayments_channel, channel_state, htlc, in
         "channel_state": channel_state.to_request_dict(),
         "htlc": {
             "data": htlc.get_data(),
-            "hash": htlc.get_hash()
         },
         "invalidating_htlc_signature": invalidating_htlc_signature
     }
@@ -684,7 +683,7 @@ def _send_co_owner_htlc(htlc, hops):
 def _send_to_co_owner(micropayments_channel, url, data):
     co_owner_location = micropayments_channel.get_co_owner_location()
     url = "http://%s:%s%s" % (co_owner_location.get_hostname(), co_owner_location.get_port(), url)
-    response = requests.post(url, json=data)
+    response = requests.post(url, json=data, timeout=10)
     if response.status_code != 200:
         raise ValidationError("Co-owner did not respond correctly")
 
