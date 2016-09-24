@@ -46,4 +46,4 @@ class BalanceForm(forms.Form):
 class BalancePostFormBrowsableAPIRenderer(CustomPostFormBrowsableAPIRenderer):
 
     def get_custom_post_form(self):
-        return RegisterForm().as_p()
+        return BalanceForm().as_p()

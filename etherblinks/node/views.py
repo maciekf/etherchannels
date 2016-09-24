@@ -5,6 +5,7 @@ from apps import async_task, deferred_task, monitor_channel
 
 from django.contrib.auth.models import User
 from django.conf import settings
+from django.db import transaction
 from django.utils.synch import RWLock
 
 from ethereum import channel
@@ -652,6 +653,7 @@ def _save_channel(cid, owner, from_address, to_address, co_owner_hostname, co_ow
 
 
 @deferred_task
+@transaction.atomic()
 def _deferred_save_channel(cid, owner, from_address, to_address, co_owner_hostname, co_owner_port):
     _save_channel(cid, owner, from_address, to_address, co_owner_hostname, co_owner_port)
 
