@@ -1,5 +1,0 @@
-validating timeouts
-monitoring htlcs on blockchain
-
-allowing to send further
-taking lock when resolving htlc
