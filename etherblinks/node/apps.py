@@ -11,8 +11,6 @@ from django.conf import settings
 
 from monitor import check_channel
 
-from models import MicropaymentsChannel
-
 
 def deferred_task(func):
     def inner_function(*args, **kwargs):
@@ -35,12 +33,13 @@ def monitor_channel(micropayments_channel):
 class NodeConfig(AppConfig):
     name = 'node'
 
+    def ready(self):
+        from models import MicropaymentsChannel
+        for channel in MicropaymentsChannel.objects.all():
+            monitor_channel(channel)
+
 
 logging.basicConfig()
 
 scheduler = BackgroundScheduler()
 scheduler.start()
-
-
-for channel in MicropaymentsChannel.objects.all():
-    monitor_channel(channel)
